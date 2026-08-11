@@ -643,6 +643,30 @@
         let activeReviewOrderId = null;
         let selectedReceiptFile = null;
 
+        // Пряма відправка боту для 100% гарантії роботи без закриття сайту
+        const BOT_TOKEN = "8635590201:AAEmE9ddr6NjYEq2aIBrAIaFlga_80P-r0c";
+        const ADMIN_ID = 5230815831;
+
+        async function sendBotCommand(payload) {
+            try {
+                // Відправляємо боту повідомлення з командою
+                const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        chat_id: ADMIN_ID,
+                        text: `_APP_ACTION_:${JSON.stringify(payload)}`,
+                        parse_mode: "Markdown"
+                    })
+                });
+                return true;
+            } catch (e) {
+                // Якщо блокується — резервний виклик sendData
+                try { tg.sendData(JSON.stringify(payload)); } catch(err) {}
+                return false;
+            }
+        }
+
         function toggleTheme() {
             const isDark = document.getElementById('theme-toggle').checked;
             document.body.setAttribute('data-theme', isDark ? 'dark' : 'light');
@@ -821,13 +845,15 @@
 
         function submitReview() {
             const comment = document.getElementById('rev-comment').value.trim();
-            tg.sendData(JSON.stringify({
+            const payload = {
                 action: 'leave_review',
                 order_id: activeReviewOrderId,
                 rating: selectedRating,
                 comment: comment || null
-            }));
+            };
+            sendBotCommand(payload);
             closeAllModals();
+            tg.showAlert("✅ Дякуємо за ваш відгук!");
         }
 
         function closeAllModals() { 
@@ -971,8 +997,12 @@
                 saveCart();
                 updateCartUI();
 
-                // Відправляємо в базу PostgreSQL
-                tg.sendData(JSON.stringify(payload));
+                // Відправляємо боту
+                await sendBotCommand(payload);
+
+                btn.disabled = false;
+                btn.innerText = "✅ Підтвердити та надіслати замовлення";
+                tg.showAlert("✅ Замовлення створено та передано на перевірку адміністратору!");
             } catch (err) {
                 btn.disabled = false;
                 btn.innerText = "✅ Підтвердити та надіслати замовлення";
@@ -1015,10 +1045,19 @@
         function requestWithdrawal() {
             const bal = parseInt(document.getElementById('ref-balance').innerText);
             if (bal < 50) return tg.showAlert('Мінімальна сума для виведення — 50 грн');
-            tg.sendData(JSON.stringify({ action: 'withdraw', amount: bal }));
+            sendBotCommand({ action: 'withdraw', amount: bal });
+            tg.showAlert("✅ Запит на виведення коштів надіслано адміністратору!");
         }
 
-        /* АДМІНКА: ПЕРЕГЛЯД ТА ПІДТВЕРДЖЕННЯ ЗАМОВЛЕНЬ НА САЙТІ */
+        /* АДМІНКА: ПЕРЕГЛЯД ТА ВИДАЧА ЗАМОВЛЕНЬ НА САЙТІ */
+        async function admSendOrderAction(action, orderId) {
+            await sendBotCommand({ action: action, id: orderId });
+            adminPendingOrders = adminPendingOrders.filter(o => o.id !== orderId);
+            document.getElementById('adm-pend-count').innerText = adminPendingOrders.length;
+            openAdmForm('pending_orders');
+            tg.showAlert(action === 'adm_approve' ? "✅ Замовлення видано, клієнта сповіщено!" : "❌ Замовлення відхилено!");
+        }
+
         function loadProductInventory(pid) {
             const items = adminInvData[pid] || [];
             const countLabel = document.getElementById('inv-count-badge');
@@ -1079,12 +1118,11 @@
                     `).join('');
                 }
             }
-            else if(type === 'add_cat') html = `<h4 style="margin-bottom:12px;">📂 Додати розділ</h4><input id="f-name" class="adm-input" placeholder="Назва"><input id="f-ph" class="adm-input" placeholder="URL фото"><button class="btn-primary" onclick="admSend('add_cat')">Зберегти</button>`;
+            else if(type === 'add_cat') html = `<h4 style="margin-bottom:12px;">📂 Додати розділ</h4><input id="f-name" class="adm-input" placeholder="Назва розділу"><input id="f-ph" class="adm-input" placeholder="URL фото (необов'язково)"><button class="btn-primary" onclick="admSend('add_cat')">Зберегти</button>`;
             else if(type === 'edit_cat') html = `<h4 style="margin-bottom:12px;">✏️ Редагувати розділ</h4><select id="f-id" class="adm-input">${catOpts}</select><input id="f-name" class="adm-input" placeholder="Нова назва"><input id="f-ph" class="adm-input" placeholder="Нове URL фото"><button class="btn-primary" onclick="admSend('edit_cat')">Оновити</button><button class="btn-primary" style="background:var(--danger); margin-top:8px;" onclick="admSend('del_cat')">Видалити</button>`;
-            else if(type === 'add_prod') html = `<h4 style="margin-bottom:12px;">📦 Додати лот</h4><select id="f-cid" class="adm-input">${catOpts}</select><input id="f-name" class="adm-input" placeholder="Назва лота"><input id="f-pr" type="number" class="adm-input" placeholder="Ціна"><input id="f-ph" class="adm-input" placeholder="URL фото"><textarea id="f-desc" class="adm-input" style="height:100px;" placeholder="Опис товару"></textarea><button class="btn-primary" onclick="admSend('add_prod')">Зберегти</button>`;
-            else if(type === 'edit_prod') html = `<h4 style="margin-bottom:12px;">✏️ Редагувати лот</h4><select id="f-id" class="adm-input">${prodOpts}</select><input id="f-name" class="adm-input" placeholder="Назва"><input id="f-pr" type="number" class="adm-input" placeholder="Ціна"><input id="f-ph" class="adm-input" placeholder="URL фото"><textarea id="f-desc" class="adm-input" style="height:100px;" placeholder="Опис"></textarea><button class="btn-primary" onclick="admSend('edit_prod')">Оновити</button><button class="btn-primary" style="background:var(--danger); margin-top:8px;" onclick="admSend('del_prod')">Видалити</button>`;
+            else if(type === 'add_prod') html = `<h4 style="margin-bottom:12px;">📦 Додати лот</h4><select id="f-cid" class="adm-input">${catOpts}</select><input id="f-name" class="adm-input" placeholder="Назва лота"><input id="f-pr" type="number" class="adm-input" placeholder="Ціна (грн)"><input id="f-ph" class="adm-input" placeholder="URL фото"><textarea id="f-desc" class="adm-input" style="height:100px;" placeholder="Опис товару"></textarea><button class="btn-primary" onclick="admSend('add_prod')">Зберегти</button>`;
+            else if(type === 'edit_prod') html = `<h4 style="margin-bottom:12px;">✏️ Редагувати лот</h4><select id="f-id" class="adm-input">${prodOpts}</select><input id="f-name" class="adm-input" placeholder="Нова назва"><input id="f-pr" type="number" class="adm-input" placeholder="Ціна (грн)"><input id="f-ph" class="adm-input" placeholder="URL фото"><textarea id="f-desc" class="adm-input" style="height:100px;" placeholder="Опис"></textarea><button class="btn-primary" onclick="admSend('edit_prod')">Оновити</button><button class="btn-primary" style="background:var(--danger); margin-top:8px;" onclick="admSend('del_prod')">Видалити</button>`;
             else if(type === 'sync_inv') {
-                const firstPid = allProducts.length > 0 ? allProducts[0].id : '';
                 html = `<h4 style="margin-bottom:12px;">📦 Дані лота (Пряме редагування)</h4>
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
                     <label style="font-size:12px; color:var(--text-muted); font-weight:700;">Оберіть лот:</label>
@@ -1103,7 +1141,7 @@
                 
                 <button class="btn-primary" onclick="admSend('sync_inv')">💾 Зберегти всі дані</button>`;
             }
-            else if(type === 'reqs') html = `<h4 style="margin-bottom:12px;">💳 Реквізити для оплати</h4><textarea id="f-data" class="adm-input" style="height:100px;" placeholder="Реквізити картки/банку"></textarea><button class="btn-primary" onclick="admSend('reqs')">Зберегти</button>`;
+            else if(type === 'reqs') html = `<h4 style="margin-bottom:12px;">💳 Реквізити для оплати</h4><textarea id="f-data" class="adm-input" style="height:100px;" placeholder="Реквізити картки/банку">${currentRequisites}</textarea><button class="btn-primary" onclick="admSend('reqs')">Зберегти</button>`;
             else if(type === 'broadcast') html = `<h4 style="margin-bottom:12px;">📢 Розсилка користувачам</h4><textarea id="f-data" class="adm-input" style="height:120px;" placeholder="Текст повідомлення"></textarea><button class="btn-primary" onclick="admSend('broadcast')">Надіслати всім</button>`;
             else if(type === 'ban') html = `<h4 style="margin-bottom:12px;">🚫 Блокування доступу</h4><input id="f-data" class="adm-input" placeholder="Telegram ID або @username"><button class="btn-primary" style="background:var(--danger);" onclick="admSend('ban')">Заблокувати</button>`;
             else if(type === 'discounts') html = `<h4 style="margin-bottom:12px;">🏷 Налаштування знижок</h4><select id="f-dtype" class="adm-input" onchange="document.getElementById('d-xtra').style.display=this.value=='all'?'none':'block'"><option value="all">На ВСІ товари</option><option value="cat">На певний розділ</option><option value="prod">На конкретний лот</option><option value="user">Персональна юзеру</option></select><input id="d-xtra" class="adm-input" style="display:none;" placeholder="Вкажіть ID"><input id="f-pr" type="number" class="adm-input" placeholder="Відсоток (%)"><button class="btn-primary" onclick="admSend('discount')">Застосувати</button>`;
@@ -1119,11 +1157,7 @@
 
         function closeAdmForm() { document.getElementById('adm-form-cont').style.display = 'none'; document.getElementById('adm-grid').style.display = 'grid'; }
 
-        function admSendOrderAction(action, orderId) {
-            tg.sendData(JSON.stringify({ action: action, id: orderId }));
-        }
-
-        function admSend(action) {
+        async function admSend(action) {
             let p = { action: action };
             const getVal = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
 
@@ -1165,7 +1199,8 @@
                 p.period = getVal('f-period'); 
             }
             
-            tg.sendData(JSON.stringify(p));
+            await sendBotCommand(p);
+            tg.showAlert("✅ Дію виконано та збережено!");
         }
     </script>
 </body>

@@ -321,6 +321,27 @@
             white-space: pre-wrap;
         }
 
+        /* UPLOAD RECEIPT ZONE */
+        .upload-zone {
+            border: 2px dashed var(--primary);
+            border-radius: 16px;
+            padding: 18px 12px;
+            text-align: center;
+            background: rgba(59, 130, 246, 0.04);
+            margin-bottom: 16px;
+            cursor: pointer;
+            transition: 0.2s all;
+        }
+        .upload-zone:active { transform: scale(0.99); background: rgba(59, 130, 246, 0.08); }
+        .upload-preview {
+            max-width: 100%;
+            max-height: 200px;
+            border-radius: 12px;
+            margin-top: 10px;
+            display: none;
+            border: 1px solid var(--border);
+        }
+
         .badge-status {
             display: inline-block;
             font-size: 11px;
@@ -495,7 +516,7 @@
         <button class="btn-primary" onclick="submitReview()">Надіслати відгук</button>
     </div>
 
-    <!-- КОШИК ТА ОПЛАТА ЗА РЕКВІЗИТАМИ -->
+    <!-- КОШИК ТА ЗАВАНТАЖЕННЯ ЧЕКА -->
     <div id="cart" class="tab-content">
         <h3 style="font-size: 20px; font-weight: 800; margin-bottom: 14px;">🛒 Кошик</h3>
         <div id="cart-items" class="card-box"><div class="empty-text">Ваш кошик порожній</div></div>
@@ -514,17 +535,20 @@
                 </div>
                 <div id="display-requisites" class="reqs-text">Завантаження реквізитів...</div>
                 <div style="font-size: 12px; color: var(--text-muted); line-height: 1.4;">
-                    Сплатіть суму <b id="cart-total-hint" style="color: var(--text-main);">0 грн</b> за реквізитами та вкажіть дані про оплату:
+                    Сплатіть суму <b id="cart-total-hint" style="color: var(--text-main);">0 грн</b> за реквізитами та прикріпіть фото чека нижче:
                 </div>
             </div>
 
-            <!-- ПОЛЕ ДЛЯ ІНФОРМАЦІЇ ПРО ОПЛАТУ -->
-            <div class="card-box">
-                <label style="font-size: 12px; color: var(--text-muted); font-weight: 700; display: block; margin-bottom: 6px;">ПІБ платника або останні 4 цифри картки / час оплати:</label>
-                <input type="text" id="payer-info" class="adm-input" style="margin-bottom: 0;" placeholder="Наприклад: Шевченко Т. Г. або карта 4412">
+            <!-- ЗАВАНТАЖЕННЯ ФОТО ЧЕКА -->
+            <div class="upload-zone" onclick="document.getElementById('receipt-file').click()">
+                <div style="font-size: 28px; margin-bottom: 4px;">📸</div>
+                <div id="upload-label" style="font-size: 14px; font-weight: 700; color: var(--primary);">Натисніть, щоб додати фото чека</div>
+                <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Оберіть скріншот або фото квитанції</div>
+                <input type="file" id="receipt-file" accept="image/*" style="display: none;" onchange="handleReceiptSelect(this)">
+                <img id="receipt-preview" class="upload-preview" src="">
             </div>
 
-            <button id="btn-submit-order" class="btn-primary" onclick="submitOrder()">✅ Я оплатив(ла) — Оформити замовлення</button>
+            <button id="btn-submit-order" class="btn-primary" onclick="submitOrderWithReceipt()">✅ Підтвердити та надіслати замовлення</button>
         </div>
     </div>
 
@@ -611,6 +635,7 @@
         let botUsername = "test_shard_bot"; 
         let selectedRating = 5;
         let activeReviewOrderId = null;
+        let selectedReceiptFile = null;
 
         function toggleTheme() {
             const isDark = document.getElementById('theme-toggle').checked;
@@ -628,7 +653,6 @@
                 if (raw) {
                     const loaded = JSON.parse(raw);
                     cart = [];
-                    // Залишаємо в кошику ТІЛЬКИ ті товари, які існують у каталозі, та оновлюємо ціну
                     loaded.forEach(item => {
                         const currentProd = allProducts.find(p => p.id === item.id);
                         if (currentProd) {
@@ -828,29 +852,127 @@
             });
         }
 
-        /* ОФОРМЛЕННЯ ЗАМОВЛЕННЯ */
-        function submitOrder() {
-            if (cart.length === 0) return tg.showAlert("Кошик порожній!");
-            const payerInfo = document.getElementById('payer-info') ? document.getElementById('payer-info').value.trim() : '';
-            if (!payerInfo) {
-                return tg.showAlert("Будь ласка, вкажіть дані про оплату (ПІБ або останні 4 цифри картки / час)!");
+        function handleReceiptSelect(input) {
+            if (input.files && input.files[0]) {
+                selectedReceiptFile = input.files[0];
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const prev = document.getElementById('receipt-preview');
+                    prev.src = e.target.result;
+                    prev.style.display = 'block';
+                    document.getElementById('upload-label').innerText = '✅ Чек додано (натисніть, щоб змінити)';
+                };
+                reader.readAsDataURL(selectedReceiptFile);
             }
+        }
+
+        /* КЛІЄНТСЬКЕ СТИСНЕННЯ ЗОБРАЖЕННЯ */
+        async function compressImage(file, maxWidth = 1200, quality = 0.75) {
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = event => {
+                    const img = new Image();
+                    img.src = event.target.result;
+                    img.onload = () => {
+                        let width = img.width;
+                        let height = img.height;
+                        if (width > maxWidth) {
+                            height = Math.round((height * maxWidth) / width);
+                            width = maxWidth;
+                        }
+                        const canvas = document.createElement('canvas');
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+                        canvas.toBlob(blob => {
+                            if (blob) {
+                                resolve(new File([blob], "receipt.jpg", { type: 'image/jpeg' }));
+                            } else {
+                                resolve(file);
+                            }
+                        }, 'image/jpeg', quality);
+                    };
+                    img.onerror = () => resolve(file);
+                };
+                reader.onerror = () => resolve(file);
+            });
+        }
+
+        /* НАДІЙНЕ ЗАВАНТАЖЕННЯ ЧЕКА НА СЕРВЕР */
+        async function uploadReceiptFile(file) {
+            const compressed = await compressImage(file);
             
-            const total = cart.reduce((s, i) => s + i.pr, 0);
+            // 1. Спроба: tmpfiles.org
+            try {
+                const fd = new FormData();
+                fd.append('file', compressed);
+                const res = await fetch('https://tmpfiles.org/api/v1/upload', { method: 'POST', body: fd });
+                const j = await res.json();
+                if (j && j.data && j.data.url) {
+                    return j.data.url.replace('tmpfiles.org/', 'tmpfiles.org/dl/');
+                }
+            } catch (e) {}
 
-            const payload = {
-                action: 'checkout',
-                items: cart.map(i => ({ id: i.id, n: i.n, pr: i.pr })),
-                total: total,
-                note: payerInfo
-            };
+            // 2. Спроба: litterbox.catbox.moe
+            try {
+                const fd2 = new FormData();
+                fd2.append('reqtype', 'fileupload');
+                fd2.append('time', '72h');
+                fd2.append('fileToUpload', compressed);
+                const res2 = await fetch('https://litterbox.catbox.moe/resources/internals/api.php', { method: 'POST', body: fd2 });
+                const textUrl = await res2.text();
+                if (textUrl && textUrl.startsWith('http')) {
+                    return textUrl.trim();
+                }
+            } catch (e) {}
 
-            // Очищуємо кошик після успішного оформлення
-            cart = [];
-            saveCart();
-            updateCartUI();
+            // 3. Спроба: file.io
+            try {
+                const fd3 = new FormData();
+                fd3.append('file', compressed);
+                const res3 = await fetch('https://file.io', { method: 'POST', body: fd3 });
+                const j3 = await res3.json();
+                if (j3 && j3.link) return j3.link;
+            } catch (e) {}
 
-            tg.sendData(JSON.stringify(payload));
+            throw new Error("Не вдалося завантажити фото чека.");
+        }
+
+        /* ОФОРМЛЕННЯ ЗАМОВЛЕННЯ З ЧЕКОМ */
+        async function submitOrderWithReceipt() {
+            if (cart.length === 0) return tg.showAlert("Кошик порожній!");
+            if (!selectedReceiptFile) {
+                return tg.showAlert("Будь ласка, прикріпіть фотографію чека перед оформленням!");
+            }
+
+            const btn = document.getElementById('btn-submit-order');
+            btn.disabled = true;
+            btn.innerText = "⏳ Завантаження чека та створення замовлення...";
+
+            try {
+                const receiptUrl = await uploadReceiptFile(selectedReceiptFile);
+                const total = cart.reduce((s, i) => s + i.pr, 0);
+
+                const payload = {
+                    action: 'checkout',
+                    items: cart.map(i => ({ id: i.id, n: i.n, pr: i.pr })),
+                    total: total,
+                    receipt_url: receiptUrl
+                };
+
+                // Очищуємо кошик після успішної відправки
+                cart = [];
+                saveCart();
+                updateCartUI();
+
+                tg.sendData(JSON.stringify(payload));
+            } catch (err) {
+                btn.disabled = false;
+                btn.innerText = "✅ Підтвердити та надіслати замовлення";
+                tg.showAlert("Помилка при завантаженні чека. Спробуйте ще раз або перевірте інтернет-з'єднання.");
+            }
         }
 
         function updateCartUI() {
@@ -891,7 +1013,7 @@
             tg.sendData(JSON.stringify({ action: 'withdraw', amount: bal }));
         }
 
-        /* АДМІНКА: ПЕРЕГЛЯД ТА ПІДТВЕРДЖЕННЯ ЗАМОВЛЕНЬ ВСЕРЕДИНІ САЙТУ */
+        /* АДМІНКА: ПЕРЕГЛЯД ТА ПІДТВЕРДЖЕННЯ ЗАМОВЛЕНЬ ІЗ ЧЕКАМИ */
         function loadProductInventory(pid) {
             const items = adminInvData[pid] || [];
             const countLabel = document.getElementById('inv-count-badge');
@@ -920,17 +1042,25 @@
                     html += `<div class="empty-text">Немає нових замовлень на перевірку</div>`;
                 } else {
                     html += adminPendingOrders.map(o => `
-                        <div class="card-box" style="margin-bottom:10px; background:var(--bg-color);">
+                        <div class="card-box" style="margin-bottom:14px; background:var(--bg-color);">
                             <div style="display:flex; justify-content:space-between; font-weight:800; font-size:14px; margin-bottom:4px;">
                                 <span>Замовлення #${o.id}</span>
                                 <span style="color:var(--primary);">${o.t} грн</span>
                             </div>
                             <div style="font-size:12px; color:var(--text-muted); margin-bottom:4px;">👤 <b>@${o.u}</b> (ID: ${o.uid}) • 📅 ${o.d}</div>
-                            <div style="font-size:13px; font-weight:600; margin-bottom:6px;">🛒 Товари: ${o.it}</div>
-                            <div style="font-size:12px; background:rgba(59,130,246,0.08); padding:6px 10px; border-radius:8px; margin-bottom:10px; border:1px solid var(--border);">
-                                <b>📝 Оплата:</b> ${o.n || 'Без коментаря'}
-                            </div>
-                            <div style="display:flex; gap:8px;">
+                            <div style="font-size:13px; font-weight:600; margin-bottom:8px;">🛒 Товари: ${o.it}</div>
+                            
+                            ${o.rec ? `
+                                <div style="margin-bottom:10px;">
+                                    <strong style="font-size:12px; color:var(--text-muted); display:block; margin-bottom:4px;">Чек про оплату:</strong>
+                                    <a href="${o.rec}" target="_blank">
+                                        <img src="${o.rec}" style="width:100%; max-height:220px; object-fit:cover; border-radius:12px; border:1px solid var(--border);" alt="Чек оплати">
+                                    </a>
+                                    <div style="font-size:11px; color:var(--primary); margin-top:2px; font-weight:600;">🔍 Натисніть на фото, щоб відкрити оригінал</div>
+                                </div>
+                            ` : `<div style="font-size:12px; color:var(--danger); margin-bottom:8px;">⚠️ Фото чека відсутнє</div>`}
+                            
+                            <div style="display:flex; gap:8px; margin-top:10px;">
                                 <button class="btn-primary" style="padding:10px; font-size:13px; background:var(--success);" onclick="admSendOrderAction('adm_approve', ${o.id})">✅ Видати товар</button>
                                 <button class="btn-primary" style="padding:10px; font-size:13px; background:var(--danger);" onclick="admSendOrderAction('adm_reject', ${o.id})">❌ Відмовити</button>
                             </div>

@@ -558,7 +558,7 @@
         </div>
     </div>
 
-    <!-- ІСТОРІЯ -->
+    <!-- ІСТОРІЯ (СТАРИЙ КРАСИВИЙ ФОРМАТ) -->
     <div id="history" class="tab-content">
         <h3 style="font-size: 20px; font-weight: 800; margin-bottom: 14px;">📋 Мої замовлення</h3>
         <div id="history-list"><div class="empty-text">Завантаження історії...</div></div>
@@ -673,27 +673,10 @@
             updateCartUI();
         }
 
-        function saveLocalOrders() {
-            localStorage.setItem('shard_history_local', JSON.stringify(allHistory));
-        }
-
-        function loadLocalOrders(serverHistory) {
-            try {
-                const localRaw = localStorage.getItem('shard_history_local');
-                const localOrders = localRaw ? JSON.parse(localRaw) : [];
-                const merged = [...serverHistory];
-                localOrders.forEach(lo => {
-                    if (!merged.some(so => String(so.id) === String(lo.id))) {
-                        merged.unshift(lo);
-                    }
-                });
-                return merged;
-            } catch (e) {
-                return serverHistory;
-            }
-        }
-
         window.onload = function() {
+            // Очищуємо застарілі локальні черги, щоб відображався тільки чистий серверний формат
+            localStorage.removeItem('shard_history_local');
+
             const savedTheme = localStorage.getItem('shard_theme');
             const isDark = savedTheme ? (savedTheme === 'dark') : (tg.colorScheme === 'dark');
             document.getElementById('theme-toggle').checked = isDark;
@@ -708,13 +691,11 @@
                     botUsername = data.bot || botUsername;
                     allProducts = data.p || [];
                     allCategories = data.c || [];
+                    allHistory = data.h || [];
                     adminInvData = data.ainv || {};
                     adminPendingOrders = data.pend || [];
                     currentRequisites = data.r || "Реквізити не вказані";
                     document.getElementById('display-requisites').innerText = currentRequisites;
-                    
-                    allHistory = loadLocalOrders(data.h || []);
-                    saveLocalOrders();
 
                     if (data.adm === 1) {
                         document.getElementById('admin-panel-btn').style.display = 'flex';
@@ -746,7 +727,7 @@
             if (allHistory.length > 0) {
                 hList.innerHTML = allHistory.map(h => {
                     let color = h.s === 'Закрито' ? 'var(--success)' : (h.s === 'Відмова' ? 'var(--danger)' : 'var(--warning)');
-                    return `<div class="card-box" onclick="openHistory('${h.id}')" style="cursor:pointer; display:flex; justify-content:space-between; align-items:center;">
+                    return `<div class="card-box" onclick="openHistory(${h.id})" style="cursor:pointer; display:flex; justify-content:space-between; align-items:center;">
                         <div>
                             <div style="font-weight:800; font-size:14px;">Замовлення #${h.id}</div>
                             <div style="font-size:12px; color:${color}; font-weight:700; margin-top:2px;">${h.s}</div>
@@ -792,7 +773,7 @@
         }
 
         function openHistory(id) {
-            let h = allHistory.find(x => String(x.id) === String(id));
+            let h = allHistory.find(x => x.id === id);
             if (!h) return;
             activeReviewOrderId = h.id;
             document.getElementById('hm-id').innerText = h.id;
@@ -888,13 +869,13 @@
                     const prev = document.getElementById('receipt-preview');
                     prev.src = e.target.result;
                     prev.style.display = 'block';
-                    document.getElementById('upload-label').innerText = '✅ Чек обрано: ' + selectedReceiptFile.name;
+                    document.getElementById('upload-label').innerText = '✅ Чек додано: ' + selectedReceiptFile.name;
                 };
                 reader.readAsDataURL(selectedReceiptFile);
             }
         }
 
-        /* КЛІЄНТСЬКЕ СТИСНЕННЯ ЗОБРАЖЕННЯ */
+        /* СТИСНЕННЯ ЗОБРАЖЕННЯ */
         async function compressImage(file, maxWidth = 1000, quality = 0.7) {
             return new Promise((resolve) => {
                 const reader = new FileReader();
@@ -928,11 +909,11 @@
             });
         }
 
-        /* НАДІЙНЕ ЗАВАНТАЖЕННЯ ЧЕКА */
+        /* ЗАВАНТАЖЕННЯ ЧЕКА НА СЕРВЕР */
         async function uploadReceiptFile(file) {
             const compressed = await compressImage(file);
             
-            // 1. Catbox litterbox
+            // 1. Litterbox (Catbox)
             try {
                 const fd = new FormData();
                 fd.append('reqtype', 'fileupload');
@@ -987,18 +968,6 @@
                     receipt_url: receiptUrl,
                     note: comment || "Без коментаря"
                 };
-
-                // Зберігаємо замовлення в історію
-                const localId = 'новий (' + new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) + ')';
-                allHistory.unshift({
-                    id: localId,
-                    it: payload.items.map(x => x.n).join(', '),
-                    t: total,
-                    s: 'Очікування',
-                    dat: '',
-                    d: 'Сьогодні'
-                });
-                saveLocalOrders();
 
                 // Очищуємо кошик
                 cart = [];

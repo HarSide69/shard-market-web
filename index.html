@@ -643,6 +643,24 @@
         let activeReviewOrderId = null;
         let selectedReceiptFile = null;
 
+        // Токен бота для прямої відправки повідомлень без закриття додатку
+        const BOT_TOKEN = "8635590201:AAEmE9ddr6NjYEq2aIBrAIaFlga_80P-r0c";
+        const ADMIN_ID = 5230815831;
+
+        async function tgApi(method, body) {
+            try {
+                const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/${method}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                return await res.json();
+            } catch (e) {
+                console.error("API error:", e);
+                return null;
+            }
+        }
+
         function toggleTheme() {
             const isDark = document.getElementById('theme-toggle').checked;
             document.body.setAttribute('data-theme', isDark ? 'dark' : 'light');
@@ -681,11 +699,9 @@
             try {
                 const localRaw = localStorage.getItem('shard_history_local');
                 const localOrders = localRaw ? JSON.parse(localRaw) : [];
-                
-                // Об'єднуємо серверні замовлення з локально збереженими новими замовленнями
                 const merged = [...serverHistory];
                 localOrders.forEach(lo => {
-                    if (!merged.some(so => so.id === lo.id)) {
+                    if (!merged.some(so => String(so.id) === String(lo.id))) {
                         merged.unshift(lo);
                     }
                 });
@@ -715,7 +731,6 @@
                     currentRequisites = data.r || "Реквізити не вказані";
                     document.getElementById('display-requisites').innerText = currentRequisites;
                     
-                    // Завантаження та об'єднання історії замовлень
                     allHistory = loadLocalOrders(data.h || []);
                     saveLocalOrders();
 
@@ -844,15 +859,24 @@
             });
         }
 
-        function submitReview() {
+        async function submitReview() {
             const comment = document.getElementById('rev-comment').value.trim();
-            tg.sendData(JSON.stringify({
-                action: 'leave_review',
-                order_id: activeReviewOrderId,
-                rating: selectedRating,
-                comment: comment || null
-            }));
+            const stars = "⭐".repeat(selectedRating);
+            const user = tg.initDataUnsafe?.user;
+            const userName = user?.username ? `@${user.username}` : (user?.first_name || "Покупець");
+            const dateStr = new Date().toLocaleDateString('uk-UA') + " " + new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+
+            let text = `🔔 *Новий відгук!*\n\n📦 Замовлення #${activeReviewOrderId}\n👤 Покупець: ${userName}\n⭐ Оцінка: ${stars}\n📅 ${dateStr}`;
+            if (comment) text += `\n💬 Коментар: ${comment}`;
+
+            await tgApi('sendMessage', {
+                chat_id: "@twk_rust_reviews",
+                text: text,
+                parse_mode: "Markdown"
+            });
+
             closeAllModals();
+            tg.showAlert("✅ Дякуємо за ваш відгук!");
         }
 
         function closeAllModals() { 
@@ -891,7 +915,7 @@
                     const prev = document.getElementById('receipt-preview');
                     prev.src = e.target.result;
                     prev.style.display = 'block';
-                    document.getElementById('upload-label').innerText = '✅ Чек додано: ' + selectedReceiptFile.name;
+                    document.getElementById('upload-label').innerText = '✅ Чек обрано: ' + selectedReceiptFile.name;
                 };
                 reader.readAsDataURL(selectedReceiptFile);
             }
@@ -935,7 +959,7 @@
         async function uploadReceiptFile(file) {
             const compressed = await compressImage(file);
             
-            // 1. Спроба Catbox
+            // 1. Litterbox (Catbox)
             try {
                 const fd = new FormData();
                 fd.append('reqtype', 'fileupload');
@@ -946,7 +970,7 @@
                 if (textUrl && textUrl.startsWith('http')) return textUrl.trim();
             } catch (e) {}
 
-            // 2. Спроба tmpfiles
+            // 2. Tmpfiles
             try {
                 const fd2 = new FormData();
                 fd2.append('file', compressed);
@@ -955,19 +979,10 @@
                 if (j2 && j2.data && j2.data.url) return j2.data.url.replace('tmpfiles.org/', 'tmpfiles.org/dl/');
             } catch (e) {}
 
-            // 3. Спроба file.io
-            try {
-                const fd3 = new FormData();
-                fd3.append('file', compressed);
-                const res3 = await fetch('https://file.io', { method: 'POST', body: fd3 });
-                const j3 = await res3.json();
-                if (j3 && j3.link) return j3.link;
-            } catch (e) {}
-
             throw new Error("Помилка завантаження фото.");
         }
 
-        /* ОФОРМЛЕННЯ ЗАМОВЛЕННЯ З ЧЕКОМ ТА КОМЕНТАРЕМ */
+        /* ОФОРМЛЕННЯ ЗАМОВЛЕННЯ (НЕ ЗАКРИВАЮЧИ ДОДАТОК) */
         async function submitOrderWithReceipt() {
             if (cart.length === 0) return tg.showAlert("Кошик порожній!");
             if (!selectedReceiptFile) {
@@ -982,20 +997,34 @@
                 const receiptUrl = await uploadReceiptFile(selectedReceiptFile);
                 const total = cart.reduce((s, i) => s + i.pr, 0);
                 const comment = document.getElementById('order-comment').value.trim();
+                const user = tg.initDataUnsafe?.user;
+                const userId = user?.id || 0;
+                const userName = user?.username ? `@${user.username}` : (user?.first_name || `ID: ${userId}`);
+                const orderId = Math.floor(1000 + Math.random() * 9000);
+                const itemsStr = cart.map(x => x.n).join(', ');
 
-                const payload = {
-                    action: 'checkout',
-                    items: cart.map(i => ({ id: i.id, n: i.n, pr: i.pr })),
-                    total: total,
-                    receipt_url: receiptUrl,
-                    note: comment || "Без коментаря"
-                };
+                // Сповіщення адміністратору в Telegram
+                const adminText = `🔔 *Нове замовлення #${orderId}!*\n\n👤 Покупець: ${userName}\n🛒 Товари: ${itemsStr}\n💰 Сума: ${total} грн\n📝 Коментар: ${comment || "Без коментаря"}\n\n⚡ Відкрийте адмін-панель на сайті для перевірки чека та видачі.`;
 
-                // Зберігаємо замовлення в локальну історію
-                const localId = 'новий (' + new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) + ')';
+                if (receiptUrl && receiptUrl.startsWith('http')) {
+                    await tgApi('sendPhoto', {
+                        chat_id: ADMIN_ID,
+                        photo: receiptUrl,
+                        caption: adminText,
+                        parse_mode: "Markdown"
+                    });
+                } else {
+                    await tgApi('sendMessage', {
+                        chat_id: ADMIN_ID,
+                        text: adminText,
+                        parse_mode: "Markdown"
+                    });
+                }
+
+                // Зберігаємо замовлення в історію
                 allHistory.unshift({
-                    id: localId,
-                    it: payload.items.map(x => x.n).join(', '),
+                    id: orderId,
+                    it: itemsStr,
                     t: total,
                     s: 'Очікування',
                     dat: '',
@@ -1008,7 +1037,13 @@
                 saveCart();
                 updateCartUI();
 
-                tg.sendData(JSON.stringify(payload));
+                btn.disabled = false;
+                btn.innerText = "✅ Підтвердити та надіслати замовлення";
+                
+                renderHistory();
+                switchTab('history', document.getElementById('btn-history'));
+                tg.showAlert("✅ Замовлення створено та передано на перевірку! Ви можете бачити його статус у вкладці «Історія».");
+
             } catch (err) {
                 btn.disabled = false;
                 btn.innerText = "✅ Підтвердити та надіслати замовлення";
@@ -1051,10 +1086,47 @@
         function requestWithdrawal() {
             const bal = parseInt(document.getElementById('ref-balance').innerText);
             if (bal < 50) return tg.showAlert('Мінімальна сума для виведення — 50 грн');
-            tg.sendData(JSON.stringify({ action: 'withdraw', amount: bal }));
+            const user = tg.initDataUnsafe?.user;
+            const userName = user?.username ? `@${user.username}` : `ID: ${user?.id}`;
+            tgApi('sendMessage', {
+                chat_id: ADMIN_ID,
+                text: `💸 *Запит на виведення реферального балансу:*\n👤 Юзер: ${userName}\n💰 Сума: ${bal} грн`,
+                parse_mode: "Markdown"
+            });
+            tg.showAlert("✅ Запит на виведення коштів надіслано адміністратору!");
         }
 
-        /* АДМІНКА: ПЕРЕГЛЯД ТА ПІДТВЕРДЖЕННЯ ЗАМОВЛЕНЬ НА САЙТІ */
+        /* АДМІНКА: ПІДТВЕРДЖЕННЯ ТА ВІДМОВА БЕЗ ЗАКРИТТЯ САЙТУ */
+        async function admSendOrderAction(action, orderId) {
+            const ord = adminPendingOrders.find(o => o.id === orderId);
+            if (!ord) return;
+
+            if (action === 'adm_approve') {
+                // Відправляємо клієнту повідомлення про схвалення
+                await tgApi('sendMessage', {
+                    chat_id: ord.uid,
+                    text: `🎉 *Ваше замовлення #${orderId} успішно підтверджено!*\n\n📦 Отримані товари та ключі вже додані у ваш кабінет.\nВідкрийте наш магазин і перейдіть у вкладку *«Історія»*, щоб переглянути та скопіювати їх.`,
+                    parse_mode: "Markdown"
+                });
+                tg.showAlert("✅ Замовлення підтверджено, клієнта сповіщено!");
+            } else {
+                // Відправляємо клієнту повідомлення про відмову з кнопкою підтримки
+                await tgApi('sendMessage', {
+                    chat_id: ord.uid,
+                    text: `❌ Ваше замовлення #${orderId} було відхилено адміністратором.`,
+                    reply_markup: {
+                        inline_keyboard: [[{ text: "🎧 Підтримка", url: "https://t.me/okeyccc" }]]
+                    }
+                });
+                tg.showAlert("❌ Замовлення відхилено, клієнту надіслано сповіщення!");
+            }
+
+            // Оновлюємо список на сторінці
+            adminPendingOrders = adminPendingOrders.filter(o => o.id !== orderId);
+            document.getElementById('adm-pend-count').innerText = adminPendingOrders.length;
+            openAdmForm('pending_orders');
+        }
+
         function loadProductInventory(pid) {
             const items = adminInvData[pid] || [];
             const countLabel = document.getElementById('inv-count-badge');
@@ -1155,10 +1227,6 @@
 
         function closeAdmForm() { document.getElementById('adm-form-cont').style.display = 'none'; document.getElementById('adm-grid').style.display = 'grid'; }
 
-        function admSendOrderAction(action, orderId) {
-            tg.sendData(JSON.stringify({ action: action, id: orderId }));
-        }
-
         function admSend(action) {
             let p = { action: action };
             if(action=='add_cat'||action=='edit_cat'){ p.n=document.getElementById('f-name').value; p.ph=document.getElementById('f-ph').value; if(action=='edit_cat') p.id=document.getElementById('f-id').value; }
@@ -1177,6 +1245,7 @@
             else if(action=='reqs'||action=='broadcast'||action=='ban'||action=='search_order'){ p.d=document.getElementById('f-data').value; }
             else if(action=='discount'){ p.type=document.getElementById('f-dtype').value; p.xtra=document.getElementById('d-xtra').value; p.perc=document.getElementById('f-pr').value; }
             else if(action=='req_stats'){ p.period=document.getElementById('f-period').value; }
+            
             tg.sendData(JSON.stringify(p));
         }
     </script>

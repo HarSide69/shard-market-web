@@ -643,24 +643,6 @@
         let activeReviewOrderId = null;
         let selectedReceiptFile = null;
 
-        // Токен бота для прямої відправки повідомлень без закриття додатку
-        const BOT_TOKEN = "8635590201:AAEmE9ddr6NjYEq2aIBrAIaFlga_80P-r0c";
-        const ADMIN_ID = 5230815831;
-
-        async function tgApi(method, body) {
-            try {
-                const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/${method}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(body)
-                });
-                return await res.json();
-            } catch (e) {
-                console.error("API error:", e);
-                return null;
-            }
-        }
-
         function toggleTheme() {
             const isDark = document.getElementById('theme-toggle').checked;
             document.body.setAttribute('data-theme', isDark ? 'dark' : 'light');
@@ -859,24 +841,15 @@
             });
         }
 
-        async function submitReview() {
+        function submitReview() {
             const comment = document.getElementById('rev-comment').value.trim();
-            const stars = "⭐".repeat(selectedRating);
-            const user = tg.initDataUnsafe?.user;
-            const userName = user?.username ? `@${user.username}` : (user?.first_name || "Покупець");
-            const dateStr = new Date().toLocaleDateString('uk-UA') + " " + new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-
-            let text = `🔔 *Новий відгук!*\n\n📦 Замовлення #${activeReviewOrderId}\n👤 Покупець: ${userName}\n⭐ Оцінка: ${stars}\n📅 ${dateStr}`;
-            if (comment) text += `\n💬 Коментар: ${comment}`;
-
-            await tgApi('sendMessage', {
-                chat_id: "@twk_rust_reviews",
-                text: text,
-                parse_mode: "Markdown"
-            });
-
+            tg.sendData(JSON.stringify({
+                action: 'leave_review',
+                order_id: activeReviewOrderId,
+                rating: selectedRating,
+                comment: comment || null
+            }));
             closeAllModals();
-            tg.showAlert("✅ Дякуємо за ваш відгук!");
         }
 
         function closeAllModals() { 
@@ -959,7 +932,7 @@
         async function uploadReceiptFile(file) {
             const compressed = await compressImage(file);
             
-            // 1. Litterbox (Catbox)
+            // 1. Catbox litterbox
             try {
                 const fd = new FormData();
                 fd.append('reqtype', 'fileupload');
@@ -979,10 +952,19 @@
                 if (j2 && j2.data && j2.data.url) return j2.data.url.replace('tmpfiles.org/', 'tmpfiles.org/dl/');
             } catch (e) {}
 
+            // 3. File.io
+            try {
+                const fd3 = new FormData();
+                fd3.append('file', compressed);
+                const res3 = await fetch('https://file.io', { method: 'POST', body: fd3 });
+                const j3 = await res3.json();
+                if (j3 && j3.link) return j3.link;
+            } catch (e) {}
+
             throw new Error("Помилка завантаження фото.");
         }
 
-        /* ОФОРМЛЕННЯ ЗАМОВЛЕННЯ (НЕ ЗАКРИВАЮЧИ ДОДАТОК) */
+        /* ОФОРМЛЕННЯ ЗАМОВЛЕННЯ З ЧЕКОМ ТА КОМЕНТАРЕМ */
         async function submitOrderWithReceipt() {
             if (cart.length === 0) return tg.showAlert("Кошик порожній!");
             if (!selectedReceiptFile) {
@@ -997,34 +979,20 @@
                 const receiptUrl = await uploadReceiptFile(selectedReceiptFile);
                 const total = cart.reduce((s, i) => s + i.pr, 0);
                 const comment = document.getElementById('order-comment').value.trim();
-                const user = tg.initDataUnsafe?.user;
-                const userId = user?.id || 0;
-                const userName = user?.username ? `@${user.username}` : (user?.first_name || `ID: ${userId}`);
-                const orderId = Math.floor(1000 + Math.random() * 9000);
-                const itemsStr = cart.map(x => x.n).join(', ');
 
-                // Сповіщення адміністратору в Telegram
-                const adminText = `🔔 *Нове замовлення #${orderId}!*\n\n👤 Покупець: ${userName}\n🛒 Товари: ${itemsStr}\n💰 Сума: ${total} грн\n📝 Коментар: ${comment || "Без коментаря"}\n\n⚡ Відкрийте адмін-панель на сайті для перевірки чека та видачі.`;
-
-                if (receiptUrl && receiptUrl.startsWith('http')) {
-                    await tgApi('sendPhoto', {
-                        chat_id: ADMIN_ID,
-                        photo: receiptUrl,
-                        caption: adminText,
-                        parse_mode: "Markdown"
-                    });
-                } else {
-                    await tgApi('sendMessage', {
-                        chat_id: ADMIN_ID,
-                        text: adminText,
-                        parse_mode: "Markdown"
-                    });
-                }
+                const payload = {
+                    action: 'checkout',
+                    items: cart.map(i => ({ id: i.id, n: i.n, pr: i.pr })),
+                    total: total,
+                    receipt_url: receiptUrl,
+                    note: comment || "Без коментаря"
+                };
 
                 // Зберігаємо замовлення в історію
+                const localId = 'новий (' + new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) + ')';
                 allHistory.unshift({
-                    id: orderId,
-                    it: itemsStr,
+                    id: localId,
+                    it: payload.items.map(x => x.n).join(', '),
                     t: total,
                     s: 'Очікування',
                     dat: '',
@@ -1037,13 +1005,8 @@
                 saveCart();
                 updateCartUI();
 
-                btn.disabled = false;
-                btn.innerText = "✅ Підтвердити та надіслати замовлення";
-                
-                renderHistory();
-                switchTab('history', document.getElementById('btn-history'));
-                tg.showAlert("✅ Замовлення створено та передано на перевірку! Ви можете бачити його статус у вкладці «Історія».");
-
+                // Відправляємо в базу PostgreSQL
+                tg.sendData(JSON.stringify(payload));
             } catch (err) {
                 btn.disabled = false;
                 btn.innerText = "✅ Підтвердити та надіслати замовлення";
@@ -1086,47 +1049,10 @@
         function requestWithdrawal() {
             const bal = parseInt(document.getElementById('ref-balance').innerText);
             if (bal < 50) return tg.showAlert('Мінімальна сума для виведення — 50 грн');
-            const user = tg.initDataUnsafe?.user;
-            const userName = user?.username ? `@${user.username}` : `ID: ${user?.id}`;
-            tgApi('sendMessage', {
-                chat_id: ADMIN_ID,
-                text: `💸 *Запит на виведення реферального балансу:*\n👤 Юзер: ${userName}\n💰 Сума: ${bal} грн`,
-                parse_mode: "Markdown"
-            });
-            tg.showAlert("✅ Запит на виведення коштів надіслано адміністратору!");
+            tg.sendData(JSON.stringify({ action: 'withdraw', amount: bal }));
         }
 
-        /* АДМІНКА: ПІДТВЕРДЖЕННЯ ТА ВІДМОВА БЕЗ ЗАКРИТТЯ САЙТУ */
-        async function admSendOrderAction(action, orderId) {
-            const ord = adminPendingOrders.find(o => o.id === orderId);
-            if (!ord) return;
-
-            if (action === 'adm_approve') {
-                // Відправляємо клієнту повідомлення про схвалення
-                await tgApi('sendMessage', {
-                    chat_id: ord.uid,
-                    text: `🎉 *Ваше замовлення #${orderId} успішно підтверджено!*\n\n📦 Отримані товари та ключі вже додані у ваш кабінет.\nВідкрийте наш магазин і перейдіть у вкладку *«Історія»*, щоб переглянути та скопіювати їх.`,
-                    parse_mode: "Markdown"
-                });
-                tg.showAlert("✅ Замовлення підтверджено, клієнта сповіщено!");
-            } else {
-                // Відправляємо клієнту повідомлення про відмову з кнопкою підтримки
-                await tgApi('sendMessage', {
-                    chat_id: ord.uid,
-                    text: `❌ Ваше замовлення #${orderId} було відхилено адміністратором.`,
-                    reply_markup: {
-                        inline_keyboard: [[{ text: "🎧 Підтримка", url: "https://t.me/okeyccc" }]]
-                    }
-                });
-                tg.showAlert("❌ Замовлення відхилено, клієнту надіслано сповіщення!");
-            }
-
-            // Оновлюємо список на сторінці
-            adminPendingOrders = adminPendingOrders.filter(o => o.id !== orderId);
-            document.getElementById('adm-pend-count').innerText = adminPendingOrders.length;
-            openAdmForm('pending_orders');
-        }
-
+        /* АДМІНКА: ПЕРЕГЛЯД ТА ПІДТВЕРДЖЕННЯ ЗАМОВЛЕНЬ НА САЙТІ */
         function loadProductInventory(pid) {
             const items = adminInvData[pid] || [];
             const countLabel = document.getElementById('inv-count-badge');
@@ -1226,6 +1152,10 @@
         }
 
         function closeAdmForm() { document.getElementById('adm-form-cont').style.display = 'none'; document.getElementById('adm-grid').style.display = 'grid'; }
+
+        function admSendOrderAction(action, orderId) {
+            tg.sendData(JSON.stringify({ action: action, id: orderId }));
+        }
 
         function admSend(action) {
             let p = { action: action };

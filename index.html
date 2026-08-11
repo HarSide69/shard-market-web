@@ -447,7 +447,7 @@
             <h2>SHARD MARKET</h2>
         </div>
     </div>
-
+const NGROK_API = "https://kitchen-tipoff-epidemic.ngrok-free.dev/api/action";
     <!-- КАТАЛОГ -->
     <div id="catalog" class="tab-content active">
         <a href="https://t.me/okeyccc" class="manager-banner" target="_blank">
@@ -473,7 +473,7 @@
         <button id="pm-btn" class="btn-primary">Додати до кошика</button>
     </div>
 
-    <!-- МОДАЛКА ІСТОРІЇ (ДЕТАЛІ ЗАМОВЛЕННЯ ТА КЛЮЧІ) -->
+    <!-- МОДАЛКА ІСТОРІЇ -->
     <div id="history-modal" class="product-modal">
         <div class="modal-handle"></div>
         <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px;">
@@ -642,6 +642,23 @@
         let selectedRating = 5;
         let activeReviewOrderId = null;
         let selectedReceiptFile = null;
+
+        // ВПИШИТЬ СЮДИ СВОЮ АКТУАЛЬНУ СИЛКУ З NGROK (наприклад: "https://kitchen-tipoff-epidemic.ngrok-free.dev/api/action")
+        const NGROK_API = "https://kitchen-tipoff-epidemic.ngrok-free.dev/api/action"; 
+
+        async function sendApi(payload) {
+            try {
+                if (NGROK_API && NGROK_API.startsWith("http")) {
+                    const res = await fetch(NGROK_API, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    if (res.ok) return await res.json();
+                }
+            } catch (e) {}
+            tg.sendData(JSON.stringify(payload));
+        }
 
         function toggleTheme() {
             const isDark = document.getElementById('theme-toggle').checked;
@@ -823,15 +840,16 @@
             });
         }
 
-        function submitReview() {
+        async function submitReview() {
             const comment = document.getElementById('rev-comment').value.trim();
-            tg.sendData(JSON.stringify({
+            await sendApi({
                 action: 'leave_review',
                 order_id: activeReviewOrderId,
                 rating: selectedRating,
                 comment: comment || null
-            }));
+            });
             closeAllModals();
+            tg.showAlert("✅ Відгук надіслано!");
         }
 
         function closeAllModals() { 
@@ -914,7 +932,6 @@
         async function uploadReceiptFile(file) {
             const compressed = await compressImage(file);
             
-            // 1. Catbox litterbox
             try {
                 const fd = new FormData();
                 fd.append('reqtype', 'fileupload');
@@ -925,7 +942,6 @@
                 if (textUrl && textUrl.startsWith('http')) return textUrl.trim();
             } catch (e) {}
 
-            // 2. Tmpfiles
             try {
                 const fd2 = new FormData();
                 fd2.append('file', compressed);
@@ -934,7 +950,6 @@
                 if (j2 && j2.data && j2.data.url) return j2.data.url.replace('tmpfiles.org/', 'tmpfiles.org/dl/');
             } catch (e) {}
 
-            // 3. File.io
             try {
                 const fd3 = new FormData();
                 fd3.append('file', compressed);
@@ -970,12 +985,14 @@
                     note: comment || "Без коментаря"
                 };
 
-                // Очищуємо кошик після успішного завантаження
                 cart = [];
                 saveCart();
                 updateCartUI();
 
-                tg.sendData(JSON.stringify(payload));
+                await sendApi(payload);
+                btn.disabled = false;
+                btn.innerText = "✅ Підтвердити та надіслати замовлення";
+                tg.showAlert("✅ Замовлення створено та передано адміністратору!");
             } catch (err) {
                 btn.disabled = false;
                 btn.innerText = "✅ Підтвердити та надіслати замовлення";
@@ -1018,10 +1035,19 @@
         function requestWithdrawal() {
             const bal = parseInt(document.getElementById('ref-balance').innerText);
             if (bal < 50) return tg.showAlert('Мінімальна сума для виведення — 50 грн');
-            tg.sendData(JSON.stringify({ action: 'withdraw', amount: bal }));
+            sendApi({ action: 'withdraw', amount: bal });
+            tg.showAlert("✅ Запит на виведення коштів надіслано!");
         }
 
-        /* АДМІНКА: ПЕРЕГЛЯД ТА ВИДАЧА ЗАМОВЛЕНЬ НА САЙТІ */
+        /* АДМІНКА: ДІЇ З ЗАМОВЛЕННЯМИ ТА ЛОТАМИ */
+        async function admSendOrderAction(action, orderId) {
+            await sendApi({ action: action, id: orderId });
+            adminPendingOrders = adminPendingOrders.filter(o => o.id !== orderId);
+            document.getElementById('adm-pend-count').innerText = adminPendingOrders.length;
+            openAdmForm('pending_orders');
+            tg.showAlert(action === 'adm_approve' ? "✅ Замовлення видано!" : "❌ Замовлення відхилено!");
+        }
+
         function loadProductInventory(pid) {
             const items = adminInvData[pid] || [];
             const countLabel = document.getElementById('inv-count-badge');
@@ -1109,7 +1135,7 @@
             else if(type === 'broadcast') html = `<h4 style="margin-bottom:12px;">📢 Розсилка користувачам</h4><textarea id="f-data" class="adm-input" style="height:120px;" placeholder="Текст повідомлення"></textarea><button class="btn-primary" onclick="admSend('broadcast')">Надіслати всім</button>`;
             else if(type === 'ban') html = `<h4 style="margin-bottom:12px;">🚫 Блокування доступу</h4><input id="f-data" class="adm-input" placeholder="Telegram ID або @username"><button class="btn-primary" style="background:var(--danger);" onclick="admSend('ban')">Заблокувати</button>`;
             else if(type === 'discounts') html = `<h4 style="margin-bottom:12px;">🏷 Налаштування знижок</h4><select id="f-dtype" class="adm-input" onchange="document.getElementById('d-xtra').style.display=this.value=='all'?'none':'block'"><option value="all">На ВСІ товари</option><option value="cat">На певний розділ</option><option value="prod">На конкретний лот</option><option value="user">Персональна юзеру</option></select><input id="d-xtra" class="adm-input" style="display:none;" placeholder="Вкажіть ID"><input id="f-pr" type="number" class="adm-input" placeholder="Відсоток (%)"><button class="btn-primary" onclick="admSend('discount')">Застосувати</button>`;
-            else if(type === 'search_order') html = `<h4 style="margin-bottom:12px;">🔍 Пошук замовлення</h4><input id="f-data" type="number" class="adm-input" placeholder="Введіть номер (#ID)"><button class="btn-primary" onclick="admSend('search_order')">Знайти в чаті</button>`;
+            else if(type === 'search_order') html = `<h4 style="margin-bottom:12px;">🔍 Пошук замовлення</h4><input id="f-data" type="number" class="adm-input" placeholder="Введіть номер (#ID)"><button class="btn-primary" onclick="admSend('search_order')">Знайти в чат</button>`;
             else if(type === 'stats') html = `<h4 style="margin-bottom:12px;">📊 Звіт статистики</h4><select id="f-period" class="adm-input"><option value="all">За весь час</option><option value="24">За 24 години</option><option value="48">За 48 годин</option><option value="720">За 30 днів</option></select><button class="btn-primary" onclick="admSend('req_stats')">Отримати звіт</button>`;
             
             cont.innerHTML = html + `<button class="btn-add" style="margin-top:10px;" onclick="closeAdmForm()">Скасувати</button>`;
@@ -1121,11 +1147,7 @@
 
         function closeAdmForm() { document.getElementById('adm-form-cont').style.display = 'none'; document.getElementById('adm-grid').style.display = 'grid'; }
 
-        function admSendOrderAction(action, orderId) {
-            tg.sendData(JSON.stringify({ action: action, id: orderId }));
-        }
-
-        function admSend(action) {
+        async function admSend(action) {
             let p = { action: action };
             const getVal = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
 
@@ -1167,7 +1189,8 @@
                 p.period = getVal('f-period'); 
             }
             
-            tg.sendData(JSON.stringify(p));
+            await sendApi(p);
+            tg.showAlert("✅ Дію виконано успішно!");
         }
     </script>
 </body>

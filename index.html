@@ -330,6 +330,26 @@
             text-transform: uppercase;
         }
 
+        /* RATING STARS */
+        .star-row {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin: 14px 0;
+        }
+        .star-btn {
+            font-size: 28px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            transition: transform 0.2s;
+            filter: grayscale(1);
+        }
+        .star-btn.active {
+            filter: grayscale(0);
+            transform: scale(1.15);
+        }
+
         /* BOTTOM DOCK NAV */
         .bottom-nav {
             position: fixed;
@@ -432,7 +452,7 @@
         <button id="pm-btn" class="btn-primary">Додати до кошика</button>
     </div>
 
-    <!-- МОДАЛКА ІСТОРІЇ -->
+    <!-- МОДАЛКА ІСТОРІЇ (ДЕТАЛІ ЗАМОВЛЕННЯ ТА КЛЮЧІ) -->
     <div id="history-modal" class="product-modal">
         <div class="modal-handle"></div>
         <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px;">
@@ -443,14 +463,39 @@
             <strong style="font-size: 13px; color: var(--text-muted);">Товари в замовленні:</strong>
             <div id="hm-items" style="margin-top: 6px; font-size: 14px; font-weight: 600;"></div>
         </div>
+        
         <div id="hm-data-block" class="card-box" style="display: none; background: rgba(16, 185, 129, 0.08); border-color: rgba(16, 185, 129, 0.25);">
-            <strong style="font-size: 13px; color: var(--success);">💾 Отримані дані:</strong>
-            <div id="hm-data" style="margin-top: 6px; font-size: 13px; font-family: monospace; white-space: pre-wrap; word-break: break-all;"></div>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <strong style="font-size: 13px; color: var(--success);">💾 Отримані дані:</strong>
+                <button onclick="copyIssuedData()" style="background: var(--success); color:#fff; border:none; padding:4px 10px; border-radius:8px; font-size:11px; font-weight:700; cursor:pointer;">Скопіювати</button>
+            </div>
+            <div id="hm-data" style="margin-top: 8px; font-size: 13px; font-family: monospace; white-space: pre-wrap; word-break: break-all;"></div>
         </div>
+
         <div style="font-size: 18px; font-weight: 800; text-align: right; margin: 16px 0;">Сума: <span id="hm-total" style="color: var(--primary);"></span> грн</div>
+        
+        <button id="hm-review-btn" class="btn-primary" style="display: none; background: #f59e0b; box-shadow: 0 6px 20px rgba(245, 158, 11, 0.25);" onclick="openReviewModal()">⭐ Залишити відгук</button>
     </div>
 
-    <!-- КОШИК ТА ОПЛАТА ЗА РЕКВІЗИТАМИ -->
+    <!-- МОДАЛКА ВІДГУКУ -->
+    <div id="review-modal" class="product-modal">
+        <div class="modal-handle"></div>
+        <h3 style="font-size: 18px; font-weight: 800; text-align: center; margin-bottom: 6px;">⭐ Оцініть покупку</h3>
+        <p style="text-align: center; font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">Ваш відгук буде опубліковано в каналі відгуків!</p>
+        
+        <div class="star-row">
+            <button class="star-btn active" onclick="setRating(1)">⭐</button>
+            <button class="star-btn active" onclick="setRating(2)">⭐</button>
+            <button class="star-btn active" onclick="setRating(3)">⭐</button>
+            <button class="star-btn active" onclick="setRating(4)">⭐</button>
+            <button class="star-btn active" onclick="setRating(5)">⭐</button>
+        </div>
+
+        <textarea id="rev-comment" class="adm-input" style="height: 90px;" placeholder="Напишіть кілька слів про покупку (за бажанням)..."></textarea>
+        <button class="btn-primary" onclick="submitReview()">Надіслати відгук</button>
+    </div>
+
+    <!-- КОШИК -->
     <div id="cart" class="tab-content">
         <h3 style="font-size: 20px; font-weight: 800; margin-bottom: 14px;">🛒 Кошик</h3>
         <div id="cart-items" class="card-box"><div class="empty-text">Ваш кошик порожній</div></div>
@@ -469,12 +514,17 @@
                 </div>
                 <div id="display-requisites" class="reqs-text">Завантаження реквізитів...</div>
                 <div style="font-size: 12px; color: var(--text-muted); line-height: 1.4;">
-                    1. Сплатіть суму <b id="cart-total-hint" style="color: var(--text-main);">0 грн</b> за реквізитами вище.<br>
-                    2. Натисніть кнопку нижче та надішліть фото чека в чат.
+                    Сплатіть суму <b id="cart-total-hint" style="color: var(--text-main);">0 грн</b> за реквізитами та вкажіть дані про оплату:
                 </div>
             </div>
 
-            <button class="btn-primary" onclick="checkout()">✅ Я оплатив(ла) — Надіслати чек</button>
+            <!-- ПОЛЕ ДЛЯ ІНФОРМАЦІЇ ПРО ОПЛАТУ -->
+            <div class="card-box">
+                <label style="font-size: 12px; color: var(--text-muted); font-weight: 700; display: block; margin-bottom: 6px;">ПІБ платника або останні 4 цифри картки / час оплати:</label>
+                <input type="text" id="payer-info" class="adm-input" style="margin-bottom: 0;" placeholder="Наприклад: Шевченко Т. Г. або карта 4412">
+            </div>
+
+            <button id="btn-submit-order" class="btn-primary" onclick="submitOrder()">✅ Я оплатив(ла) — Оформити замовлення</button>
         </div>
     </div>
 
@@ -558,11 +608,38 @@
         let adminInvData = {};
         let currentRequisites = "Реквізити уточнюються";
         let botUsername = "test_shard_bot"; 
+        let selectedRating = 5;
+        let activeReviewOrderId = null;
 
         function toggleTheme() {
             const isDark = document.getElementById('theme-toggle').checked;
             document.body.setAttribute('data-theme', isDark ? 'dark' : 'light');
             localStorage.setItem('shard_theme', isDark ? 'dark' : 'light');
+        }
+
+        function saveCart() {
+            localStorage.setItem('shard_cart', JSON.stringify(cart));
+        }
+
+        function loadAndSyncCart() {
+            try {
+                const raw = localStorage.getItem('shard_cart');
+                if (raw) {
+                    const loaded = JSON.parse(raw);
+                    cart = [];
+                    // Залишаємо в кошику ТІЛЬКИ ті товари, які існують у каталозі, та синхронізуємо ціну
+                    loaded.forEach(item => {
+                        const currentProd = allProducts.find(p => p.id === item.id);
+                        if (currentProd) {
+                            cart.push({ id: currentProd.id, n: currentProd.n, pr: currentProd.pr });
+                        }
+                    });
+                    saveCart();
+                }
+            } catch (e) {
+                cart = [];
+            }
+            updateCartUI();
         }
 
         window.onload = function() {
@@ -600,28 +677,33 @@
                     document.getElementById('cat-list').innerHTML = catHtml;
                     filterCat('all', document.querySelector('.cat-item'));
 
-                    const hList = document.getElementById('history-list');
-                    if (allHistory.length > 0) {
-                        hList.innerHTML = allHistory.map(h => {
-                            let color = h.s === 'Закрито' ? 'var(--success)' : (h.s === 'Відмова' ? 'var(--danger)' : 'var(--warning)');
-                            return `<div class="card-box" onclick="openHistory(${h.id})" style="cursor:pointer; display:flex; justify-content:space-between; align-items:center;">
-                                <div>
-                                    <div style="font-weight:800; font-size:14px;">Замовлення #${h.id}</div>
-                                    <div style="font-size:12px; color:${color}; font-weight:700; margin-top:2px;">${h.s}</div>
-                                </div>
-                                <div style="text-align:right;">
-                                    <b style="font-size:15px; color:var(--primary);">${h.t} грн</b>
-                                    <div style="font-size:11px; color:var(--text-muted); font-weight:600;">Деталі ➔</div>
-                                </div>
-                            </div>`;
-                        }).join('');
-                    } else { hList.innerHTML = '<div class="empty-text">У вас ще немає замовлень</div>'; }
+                    renderHistory();
+                    loadAndSyncCart();
 
                     document.getElementById('ref-balance').innerText = data.b || 0;
                     document.getElementById('ref-link-display').value = `https://t.me/${botUsername}?start=${data.uid}`;
                 } catch (e) {}
             }
         };
+
+        function renderHistory() {
+            const hList = document.getElementById('history-list');
+            if (allHistory.length > 0) {
+                hList.innerHTML = allHistory.map(h => {
+                    let color = h.s === 'Закрито' ? 'var(--success)' : (h.s === 'Відмова' ? 'var(--danger)' : 'var(--warning)');
+                    return `<div class="card-box" onclick="openHistory(${h.id})" style="cursor:pointer; display:flex; justify-content:space-between; align-items:center;">
+                        <div>
+                            <div style="font-weight:800; font-size:14px;">Замовлення #${h.id}</div>
+                            <div style="font-size:12px; color:${color}; font-weight:700; margin-top:2px;">${h.s}</div>
+                        </div>
+                        <div style="text-align:right;">
+                            <b style="font-size:15px; color:var(--primary);">${h.t} грн</b>
+                            <div style="font-size:11px; color:var(--text-muted); font-weight:600;">Відкрити ➔</div>
+                        </div>
+                    </div>`;
+                }).join('');
+            } else { hList.innerHTML = '<div class="empty-text">У вас ще немає замовлень</div>'; }
+        }
 
         function filterCat(cid, btn) {
             document.querySelectorAll('.cat-item').forEach(b => b.classList.remove('active'));
@@ -656,44 +738,113 @@
 
         function openHistory(id) {
             let h = allHistory.find(x => x.id === id);
+            activeReviewOrderId = h.id;
             document.getElementById('hm-id').innerText = h.id;
             let color = h.s === 'Закрито' ? 'var(--success)' : (h.s === 'Відмова' ? 'var(--danger)' : 'var(--warning)');
             document.getElementById('hm-status').innerHTML = `<span class="badge-status" style="background:rgba(255,255,255,0.08); color:${color}; border:1px solid ${color};">${h.s}</span>`;
             document.getElementById('hm-items').innerText = h.it;
             document.getElementById('hm-total').innerText = h.t;
+            
             let dataBlock = document.getElementById('hm-data-block');
+            let revBtn = document.getElementById('hm-review-btn');
+            
             if (h.s === 'Закрито' && h.dat && h.dat.trim() !== '') { 
                 document.getElementById('hm-data').innerText = h.dat; 
                 dataBlock.style.display = 'block'; 
+                revBtn.style.display = 'block';
             } else { 
                 dataBlock.style.display = 'none'; 
+                revBtn.style.display = 'none';
             }
+            
             document.getElementById('modal-overlay').classList.add('active'); 
             document.getElementById('history-modal').classList.add('active');
+        }
+
+        function copyIssuedData() {
+            const dataText = document.getElementById('hm-data').innerText;
+            navigator.clipboard.writeText(dataText).then(() => {
+                tg.showAlert("Дані скопійовано в буфер обміну!");
+            });
+        }
+
+        function openReviewModal() {
+            closeAllModals();
+            setRating(5);
+            document.getElementById('rev-comment').value = '';
+            document.getElementById('modal-overlay').classList.add('active');
+            document.getElementById('review-modal').classList.add('active');
+        }
+
+        function setRating(val) {
+            selectedRating = val;
+            const btns = document.querySelectorAll('.star-btn');
+            btns.forEach((btn, idx) => {
+                if (idx < val) btn.classList.add('active');
+                else btn.classList.remove('active');
+            });
+        }
+
+        function submitReview() {
+            const comment = document.getElementById('rev-comment').value.trim();
+            tg.sendData(JSON.stringify({
+                action: 'leave_review',
+                order_id: activeReviewOrderId,
+                rating: selectedRating,
+                comment: comment || null
+            }));
+            closeAllModals();
+            tg.showAlert("Дякуємо за ваш відгук!");
         }
 
         function closeAllModals() { 
             document.getElementById('modal-overlay').classList.remove('active'); 
             document.getElementById('product-modal').classList.remove('active'); 
             document.getElementById('history-modal').classList.remove('active'); 
+            document.getElementById('review-modal').classList.remove('active');
         }
 
-        function addToCart(id, name, price) { cart.push({id, n: name, pr: price}); updateCartUI(); tg.HapticFeedback.impactOccurred('light'); }
-        function removeFromCart(index) { cart.splice(index, 1); updateCartUI(); }
+        function addToCart(id, name, price) { 
+            cart.push({id, n: name, pr: price}); 
+            saveCart();
+            updateCartUI(); 
+            tg.HapticFeedback.impactOccurred('light'); 
+        }
+
+        function removeFromCart(index) { 
+            cart.splice(index, 1); 
+            saveCart();
+            updateCartUI(); 
+        }
+
         function copyRefLink() { document.getElementById('ref-link-display').select(); document.execCommand("copy"); tg.showAlert("Посилання скопійовано!"); }
         
         function copyRequisites() {
             navigator.clipboard.writeText(currentRequisites).then(() => {
                 tg.showAlert("Реквізити скопійовано!");
-            }).catch(() => {
-                const el = document.createElement('textarea');
-                el.value = currentRequisites;
-                document.body.appendChild(el);
-                el.select();
-                document.execCommand('copy');
-                document.body.removeChild(el);
-                tg.showAlert("Реквізити скопійовано!");
             });
+        }
+
+        /* ОФОРМЛЕННЯ ЗАМОВЛЕННЯ (НАДІЙНЕ ТА БЕЗ ЗБОЇВ) */
+        function submitOrder() {
+            if (cart.length === 0) return tg.showAlert("Кошик порожній!");
+            const payerInfo = document.getElementById('payer-info') ? document.getElementById('payer-info').value.trim() : '';
+            const total = cart.reduce((s, i) => s + i.pr, 0);
+
+            const payload = {
+                action: 'checkout',
+                items: cart.map(i => ({ id: i.id, n: i.n, pr: i.pr })),
+                total: total,
+                note: payerInfo || "Оплачено за реквізитами"
+            };
+
+            // Очищуємо кошик після успішного оформлення
+            cart = [];
+            saveCart();
+            updateCartUI();
+
+            // Відправляємо боту
+            tg.sendData(JSON.stringify(payload));
         }
 
         function updateCartUI() {
@@ -728,14 +879,13 @@
             tg.HapticFeedback.selectionChanged();
         }
 
-        function checkout() { if (cart.length > 0) tg.sendData(JSON.stringify({ action: 'checkout', items: cart, total: cart.reduce((s, i) => s + i.pr, 0) })); }
         function requestWithdrawal() {
             const bal = parseInt(document.getElementById('ref-balance').innerText);
             if (bal < 50) return tg.showAlert('Мінімальна сума для виведення — 50 грн');
             tg.sendData(JSON.stringify({ action: 'withdraw', amount: bal }));
         }
 
-        /* АДМІНКА: ЗРУЧНЕ ПРЯМЕ РЕДАГУВАННЯ ДАНИХ */
+        /* АДМІНКА */
         function loadProductInventory(pid) {
             const items = adminInvData[pid] || [];
             const countLabel = document.getElementById('inv-count-badge');
@@ -745,7 +895,6 @@
             const textarea = document.getElementById('f-data');
             if (!textarea) return;
 
-            // Автовизначення: якщо в товарах є переноси рядків, вмикаємо блоковий режим
             const hasMulti = items.some(item => item.includes('\n'));
             if (modeSelect) modeSelect.value = hasMulti ? 'multi' : 'single';
             
@@ -764,7 +913,6 @@
             else if(type === 'add_prod') html = `<h4 style="margin-bottom:12px;">📦 Додати лот</h4><select id="f-cid" class="adm-input">${catOpts}</select><input id="f-name" class="adm-input" placeholder="Назва лота"><input id="f-pr" type="number" class="adm-input" placeholder="Ціна"><input id="f-ph" class="adm-input" placeholder="URL фото"><textarea id="f-desc" class="adm-input" style="height:100px;" placeholder="Опис товару"></textarea><button class="btn-primary" onclick="admSend('add_prod')">Зберегти</button>`;
             else if(type === 'edit_prod') html = `<h4 style="margin-bottom:12px;">✏️ Редагувати лот</h4><select id="f-id" class="adm-input">${prodOpts}</select><input id="f-name" class="adm-input" placeholder="Назва"><input id="f-pr" type="number" class="adm-input" placeholder="Ціна"><input id="f-ph" class="adm-input" placeholder="URL фото"><textarea id="f-desc" class="adm-input" style="height:100px;" placeholder="Опис"></textarea><button class="btn-primary" onclick="admSend('edit_prod')">Оновити</button><button class="btn-primary" style="background:var(--danger); margin-top:8px;" onclick="admSend('del_prod')">Видалити</button>`;
             else if(type === 'sync_inv') {
-                const firstPid = allProducts.length > 0 ? allProducts[0].id : '';
                 html = `<h4 style="margin-bottom:12px;">📦 Дані лота (Пряме редагування)</h4>
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
                     <label style="font-size:12px; color:var(--text-muted); font-weight:700;">Оберіть лот:</label>

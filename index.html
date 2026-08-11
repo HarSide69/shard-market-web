@@ -495,7 +495,7 @@
         <button class="btn-primary" onclick="submitReview()">Надіслати відгук</button>
     </div>
 
-    <!-- КОШИК -->
+    <!-- КОШИК ТА ОПЛАТА ЗА РЕКВІЗИТАМИ -->
     <div id="cart" class="tab-content">
         <h3 style="font-size: 20px; font-weight: 800; margin-bottom: 14px;">🛒 Кошик</h3>
         <div id="cart-items" class="card-box"><div class="empty-text">Ваш кошик порожній</div></div>
@@ -577,6 +577,7 @@
             <div><div style="font-size: 11px; color: var(--text-muted);">Дохід</div><b id="ast-e" style="font-size: 18px; color: var(--success);">0</b></div>
         </div>
         <div class="admin-grid" id="adm-grid">
+            <button class="adm-btn" onclick="openAdmForm('pending_orders')" style="grid-column: span 2; background: linear-gradient(135deg, var(--warning), #ea580c); color: #fff;">🔔 Замовлення в обробці (<span id="adm-pend-count">0</span>)</button>
             <button class="adm-btn" onclick="openAdmForm('add_cat')">📂 Додати розділ</button>
             <button class="adm-btn" onclick="openAdmForm('edit_cat')">✏️ Ред. розділ</button>
             <button class="adm-btn" onclick="openAdmForm('add_prod')">📦 Додати лот</button>
@@ -604,7 +605,7 @@
     <script>
         const tg = window.Telegram.WebApp;
         tg.expand();
-        let cart = [], allProducts = [], allCategories = [], allHistory = [];
+        let cart = [], allProducts = [], allCategories = [], allHistory = [], adminPendingOrders = [];
         let adminInvData = {};
         let currentRequisites = "Реквізити уточнюються";
         let botUsername = "test_shard_bot"; 
@@ -627,7 +628,7 @@
                 if (raw) {
                     const loaded = JSON.parse(raw);
                     cart = [];
-                    // Залишаємо в кошику ТІЛЬКИ ті товари, які існують у каталозі, та синхронізуємо ціну
+                    // Залишаємо в кошику ТІЛЬКИ ті товари, які існують у каталозі, та оновлюємо ціну
                     loaded.forEach(item => {
                         const currentProd = allProducts.find(p => p.id === item.id);
                         if (currentProd) {
@@ -659,6 +660,7 @@
                     allCategories = data.c || [];
                     allHistory = data.h || [];
                     adminInvData = data.ainv || {};
+                    adminPendingOrders = data.pend || [];
                     currentRequisites = data.r || "Реквізити не вказані";
                     document.getElementById('display-requisites').innerText = currentRequisites;
                     
@@ -667,6 +669,7 @@
                         document.getElementById('ast-u').innerText = data.ast.u;
                         document.getElementById('ast-o').innerText = data.ast.o;
                         document.getElementById('ast-e').innerText = data.ast.e;
+                        document.getElementById('adm-pend-count').innerText = adminPendingOrders.length;
                     }
 
                     let catHtml = `<div class="cat-item active" onclick="filterCat('all', this)"><div class="cat-placeholder" style="background:var(--primary); color:#fff; display:flex; align-items:center; justify-content:center; border-radius:50%; font-size:11px;">🌐</div><span>Всі товари</span></div>`;
@@ -825,17 +828,21 @@
             });
         }
 
-        /* ОФОРМЛЕННЯ ЗАМОВЛЕННЯ (НАДІЙНЕ ТА БЕЗ ЗБОЇВ) */
+        /* ОФОРМЛЕННЯ ЗАМОВЛЕННЯ */
         function submitOrder() {
             if (cart.length === 0) return tg.showAlert("Кошик порожній!");
             const payerInfo = document.getElementById('payer-info') ? document.getElementById('payer-info').value.trim() : '';
+            if (!payerInfo) {
+                return tg.showAlert("Будь ласка, вкажіть дані про оплату (ПІБ або останні 4 цифри картки / час)!");
+            }
+            
             const total = cart.reduce((s, i) => s + i.pr, 0);
 
             const payload = {
                 action: 'checkout',
                 items: cart.map(i => ({ id: i.id, n: i.n, pr: i.pr })),
                 total: total,
-                note: payerInfo || "Оплачено за реквізитами"
+                note: payerInfo
             };
 
             // Очищуємо кошик після успішного оформлення
@@ -843,7 +850,6 @@
             saveCart();
             updateCartUI();
 
-            // Відправляємо боту
             tg.sendData(JSON.stringify(payload));
         }
 
@@ -885,7 +891,7 @@
             tg.sendData(JSON.stringify({ action: 'withdraw', amount: bal }));
         }
 
-        /* АДМІНКА */
+        /* АДМІНКА: ПЕРЕГЛЯД ТА ПІДТВЕРДЖЕННЯ ЗАМОВЛЕНЬ ВСЕРЕДИНІ САЙТУ */
         function loadProductInventory(pid) {
             const items = adminInvData[pid] || [];
             const countLabel = document.getElementById('inv-count-badge');
@@ -908,11 +914,36 @@
             let catOpts = allCategories.map(c => `<option value="${c.id}">${c.n}</option>`).join('');
             let prodOpts = allProducts.map(p => `<option value="${p.id}">${p.n}</option>`).join('');
 
-            if(type === 'add_cat') html = `<h4 style="margin-bottom:12px;">📂 Додати розділ</h4><input id="f-name" class="adm-input" placeholder="Назва"><input id="f-ph" class="adm-input" placeholder="URL фото"><button class="btn-primary" onclick="admSend('add_cat')">Зберегти</button>`;
+            if (type === 'pending_orders') {
+                html = `<h4 style="margin-bottom:12px;">🔔 Замовлення в обробці (${adminPendingOrders.length})</h4>`;
+                if (adminPendingOrders.length === 0) {
+                    html += `<div class="empty-text">Немає нових замовлень на перевірку</div>`;
+                } else {
+                    html += adminPendingOrders.map(o => `
+                        <div class="card-box" style="margin-bottom:10px; background:var(--bg-color);">
+                            <div style="display:flex; justify-content:space-between; font-weight:800; font-size:14px; margin-bottom:4px;">
+                                <span>Замовлення #${o.id}</span>
+                                <span style="color:var(--primary);">${o.t} грн</span>
+                            </div>
+                            <div style="font-size:12px; color:var(--text-muted); margin-bottom:4px;">👤 <b>@${o.u}</b> (ID: ${o.uid}) • 📅 ${o.d}</div>
+                            <div style="font-size:13px; font-weight:600; margin-bottom:6px;">🛒 Товари: ${o.it}</div>
+                            <div style="font-size:12px; background:rgba(59,130,246,0.08); padding:6px 10px; border-radius:8px; margin-bottom:10px; border:1px solid var(--border);">
+                                <b>📝 Оплата:</b> ${o.n || 'Без коментаря'}
+                            </div>
+                            <div style="display:flex; gap:8px;">
+                                <button class="btn-primary" style="padding:10px; font-size:13px; background:var(--success);" onclick="admSendOrderAction('adm_approve', ${o.id})">✅ Видати товар</button>
+                                <button class="btn-primary" style="padding:10px; font-size:13px; background:var(--danger);" onclick="admSendOrderAction('adm_reject', ${o.id})">❌ Відмовити</button>
+                            </div>
+                        </div>
+                    `).join('');
+                }
+            }
+            else if(type === 'add_cat') html = `<h4 style="margin-bottom:12px;">📂 Додати розділ</h4><input id="f-name" class="adm-input" placeholder="Назва"><input id="f-ph" class="adm-input" placeholder="URL фото"><button class="btn-primary" onclick="admSend('add_cat')">Зберегти</button>`;
             else if(type === 'edit_cat') html = `<h4 style="margin-bottom:12px;">✏️ Редагувати розділ</h4><select id="f-id" class="adm-input">${catOpts}</select><input id="f-name" class="adm-input" placeholder="Нова назва"><input id="f-ph" class="adm-input" placeholder="Нове URL фото"><button class="btn-primary" onclick="admSend('edit_cat')">Оновити</button><button class="btn-primary" style="background:var(--danger); margin-top:8px;" onclick="admSend('del_cat')">Видалити</button>`;
             else if(type === 'add_prod') html = `<h4 style="margin-bottom:12px;">📦 Додати лот</h4><select id="f-cid" class="adm-input">${catOpts}</select><input id="f-name" class="adm-input" placeholder="Назва лота"><input id="f-pr" type="number" class="adm-input" placeholder="Ціна"><input id="f-ph" class="adm-input" placeholder="URL фото"><textarea id="f-desc" class="adm-input" style="height:100px;" placeholder="Опис товару"></textarea><button class="btn-primary" onclick="admSend('add_prod')">Зберегти</button>`;
             else if(type === 'edit_prod') html = `<h4 style="margin-bottom:12px;">✏️ Редагувати лот</h4><select id="f-id" class="adm-input">${prodOpts}</select><input id="f-name" class="adm-input" placeholder="Назва"><input id="f-pr" type="number" class="adm-input" placeholder="Ціна"><input id="f-ph" class="adm-input" placeholder="URL фото"><textarea id="f-desc" class="adm-input" style="height:100px;" placeholder="Опис"></textarea><button class="btn-primary" onclick="admSend('edit_prod')">Оновити</button><button class="btn-primary" style="background:var(--danger); margin-top:8px;" onclick="admSend('del_prod')">Видалити</button>`;
             else if(type === 'sync_inv') {
+                const firstPid = allProducts.length > 0 ? allProducts[0].id : '';
                 html = `<h4 style="margin-bottom:12px;">📦 Дані лота (Пряме редагування)</h4>
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
                     <label style="font-size:12px; color:var(--text-muted); font-weight:700;">Оберіть лот:</label>
@@ -946,6 +977,10 @@
         }
 
         function closeAdmForm() { document.getElementById('adm-form-cont').style.display = 'none'; document.getElementById('adm-grid').style.display = 'grid'; }
+
+        function admSendOrderAction(action, orderId) {
+            tg.sendData(JSON.stringify({ action: action, id: orderId }));
+        }
 
         function admSend(action) {
             let p = { action: action };

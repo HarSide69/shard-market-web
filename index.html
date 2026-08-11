@@ -970,12 +970,11 @@
                     note: comment || "Без коментаря"
                 };
 
-                // Очищуємо кошик
+                // Очищуємо кошик після успішного завантаження
                 cart = [];
                 saveCart();
                 updateCartUI();
 
-                // Відправляємо в базу PostgreSQL через sendData
                 tg.sendData(JSON.stringify(payload));
             } catch (err) {
                 btn.disabled = false;
@@ -1022,7 +1021,7 @@
             tg.sendData(JSON.stringify({ action: 'withdraw', amount: bal }));
         }
 
-        /* АДМІНКА: ПЕРЕГЛЯД ТА ВІДАЧА ЗАМОВЛЕНЬ НА САЙТІ */
+        /* АДМІНКА: ПЕРЕГЛЯД ТА ВИДАЧА ЗАМОВЛЕНЬ НА САЙТІ */
         function loadProductInventory(pid) {
             const items = adminInvData[pid] || [];
             const countLabel = document.getElementById('inv-count-badge');

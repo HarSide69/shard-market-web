@@ -325,7 +325,7 @@
         .upload-zone {
             border: 2px dashed var(--primary);
             border-radius: 16px;
-            padding: 18px 12px;
+            padding: 20px 12px;
             text-align: center;
             background: rgba(59, 130, 246, 0.04);
             margin-bottom: 16px;
@@ -335,7 +335,7 @@
         .upload-zone:active { transform: scale(0.99); background: rgba(59, 130, 246, 0.08); }
         .upload-preview {
             max-width: 100%;
-            max-height: 200px;
+            max-height: 220px;
             border-radius: 12px;
             margin-top: 10px;
             display: none;
@@ -860,13 +860,13 @@
                     const prev = document.getElementById('receipt-preview');
                     prev.src = e.target.result;
                     prev.style.display = 'block';
-                    document.getElementById('upload-label').innerText = '✅ Чек обрано: ' + selectedReceiptFile.name;
+                    document.getElementById('upload-label').innerText = '✅ Чек додано: ' + selectedReceiptFile.name;
                 };
                 reader.readAsDataURL(selectedReceiptFile);
             }
         }
 
-        /* КЛІЄНТСЬКЕ СТИСНЕННЯ ЗОБРАЖЕННЯ ДЛЯ МИТТЄВОГО ЗАВАНТАЖЕННЯ */
+        /* СТИСНЕННЯ ЗОБРАЖЕННЯ */
         async function compressImage(file, maxWidth = 1000, quality = 0.7) {
             return new Promise((resolve) => {
                 const reader = new FileReader();
@@ -937,7 +937,7 @@
                 if (j3 && j3.link) return j3.link;
             } catch (e) {}
 
-            throw new Error("Помилка відправки фото.");
+            throw new Error("Помилка завантаження фото.");
         }
 
         /* ОФОРМЛЕННЯ ЗАМОВЛЕННЯ З ЧЕКОМ */
@@ -971,7 +971,7 @@
             } catch (err) {
                 btn.disabled = false;
                 btn.innerText = "✅ Підтвердити та надіслати замовлення";
-                tg.showAlert("Помилка завантаження чека. Перевірте з'єднання та спробуйте ще раз.");
+                tg.showAlert("Помилка завантаження чека. Перевірте інтернет-з'єднання та спробуйте ще раз.");
             }
         }
 

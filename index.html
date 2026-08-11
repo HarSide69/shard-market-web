@@ -643,30 +643,6 @@
         let activeReviewOrderId = null;
         let selectedReceiptFile = null;
 
-        // Пряма відправка боту для 100% гарантії роботи без закриття сайту
-        const BOT_TOKEN = "8635590201:AAEmE9ddr6NjYEq2aIBrAIaFlga_80P-r0c";
-        const ADMIN_ID = 5230815831;
-
-        async function sendBotCommand(payload) {
-            try {
-                // Відправляємо боту повідомлення з командою
-                const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        chat_id: ADMIN_ID,
-                        text: `_APP_ACTION_:${JSON.stringify(payload)}`,
-                        parse_mode: "Markdown"
-                    })
-                });
-                return true;
-            } catch (e) {
-                // Якщо блокується — резервний виклик sendData
-                try { tg.sendData(JSON.stringify(payload)); } catch(err) {}
-                return false;
-            }
-        }
-
         function toggleTheme() {
             const isDark = document.getElementById('theme-toggle').checked;
             document.body.setAttribute('data-theme', isDark ? 'dark' : 'light');
@@ -809,9 +785,13 @@
             if (h.s === 'Закрито' && h.dat && h.dat.trim() !== '') { 
                 document.getElementById('hm-data').innerText = h.dat; 
                 dataBlock.style.display = 'block'; 
-                revBtn.style.display = 'block';
             } else { 
                 dataBlock.style.display = 'none'; 
+            }
+
+            if (h.s === 'Закрито' && h.rev !== 1) {
+                revBtn.style.display = 'block';
+            } else {
                 revBtn.style.display = 'none';
             }
             
@@ -845,15 +825,13 @@
 
         function submitReview() {
             const comment = document.getElementById('rev-comment').value.trim();
-            const payload = {
+            tg.sendData(JSON.stringify({
                 action: 'leave_review',
                 order_id: activeReviewOrderId,
                 rating: selectedRating,
                 comment: comment || null
-            };
-            sendBotCommand(payload);
+            }));
             closeAllModals();
-            tg.showAlert("✅ Дякуємо за ваш відгук!");
         }
 
         function closeAllModals() { 
@@ -997,12 +975,8 @@
                 saveCart();
                 updateCartUI();
 
-                // Відправляємо боту
-                await sendBotCommand(payload);
-
-                btn.disabled = false;
-                btn.innerText = "✅ Підтвердити та надіслати замовлення";
-                tg.showAlert("✅ Замовлення створено та передано на перевірку адміністратору!");
+                // Відправляємо в базу PostgreSQL через sendData
+                tg.sendData(JSON.stringify(payload));
             } catch (err) {
                 btn.disabled = false;
                 btn.innerText = "✅ Підтвердити та надіслати замовлення";
@@ -1045,19 +1019,10 @@
         function requestWithdrawal() {
             const bal = parseInt(document.getElementById('ref-balance').innerText);
             if (bal < 50) return tg.showAlert('Мінімальна сума для виведення — 50 грн');
-            sendBotCommand({ action: 'withdraw', amount: bal });
-            tg.showAlert("✅ Запит на виведення коштів надіслано адміністратору!");
+            tg.sendData(JSON.stringify({ action: 'withdraw', amount: bal }));
         }
 
-        /* АДМІНКА: ПЕРЕГЛЯД ТА ВИДАЧА ЗАМОВЛЕНЬ НА САЙТІ */
-        async function admSendOrderAction(action, orderId) {
-            await sendBotCommand({ action: action, id: orderId });
-            adminPendingOrders = adminPendingOrders.filter(o => o.id !== orderId);
-            document.getElementById('adm-pend-count').innerText = adminPendingOrders.length;
-            openAdmForm('pending_orders');
-            tg.showAlert(action === 'adm_approve' ? "✅ Замовлення видано, клієнта сповіщено!" : "❌ Замовлення відхилено!");
-        }
-
+        /* АДМІНКА: ПЕРЕГЛЯД ТА ВІДАЧА ЗАМОВЛЕНЬ НА САЙТІ */
         function loadProductInventory(pid) {
             const items = adminInvData[pid] || [];
             const countLabel = document.getElementById('inv-count-badge');
@@ -1121,7 +1086,7 @@
             else if(type === 'add_cat') html = `<h4 style="margin-bottom:12px;">📂 Додати розділ</h4><input id="f-name" class="adm-input" placeholder="Назва розділу"><input id="f-ph" class="adm-input" placeholder="URL фото (необов'язково)"><button class="btn-primary" onclick="admSend('add_cat')">Зберегти</button>`;
             else if(type === 'edit_cat') html = `<h4 style="margin-bottom:12px;">✏️ Редагувати розділ</h4><select id="f-id" class="adm-input">${catOpts}</select><input id="f-name" class="adm-input" placeholder="Нова назва"><input id="f-ph" class="adm-input" placeholder="Нове URL фото"><button class="btn-primary" onclick="admSend('edit_cat')">Оновити</button><button class="btn-primary" style="background:var(--danger); margin-top:8px;" onclick="admSend('del_cat')">Видалити</button>`;
             else if(type === 'add_prod') html = `<h4 style="margin-bottom:12px;">📦 Додати лот</h4><select id="f-cid" class="adm-input">${catOpts}</select><input id="f-name" class="adm-input" placeholder="Назва лота"><input id="f-pr" type="number" class="adm-input" placeholder="Ціна (грн)"><input id="f-ph" class="adm-input" placeholder="URL фото"><textarea id="f-desc" class="adm-input" style="height:100px;" placeholder="Опис товару"></textarea><button class="btn-primary" onclick="admSend('add_prod')">Зберегти</button>`;
-            else if(type === 'edit_prod') html = `<h4 style="margin-bottom:12px;">✏️ Редагувати лот</h4><select id="f-id" class="adm-input">${prodOpts}</select><input id="f-name" class="adm-input" placeholder="Нова назва"><input id="f-pr" type="number" class="adm-input" placeholder="Ціна (грн)"><input id="f-ph" class="adm-input" placeholder="URL фото"><textarea id="f-desc" class="adm-input" style="height:100px;" placeholder="Опис"></textarea><button class="btn-primary" onclick="admSend('edit_prod')">Оновити</button><button class="btn-primary" style="background:var(--danger); margin-top:8px;" onclick="admSend('del_prod')">Видалити</button>`;
+            else if(type === 'edit_prod') html = `<h4 style="margin-bottom:12px;">✏️ Редагувати лот</h4><select id="f-id" class="adm-input">${prodOpts}</select><input id="f-name" class="adm-input" placeholder="Назва"><input id="f-pr" type="number" class="adm-input" placeholder="Ціна (грн)"><input id="f-ph" class="adm-input" placeholder="URL фото"><textarea id="f-desc" class="adm-input" style="height:100px;" placeholder="Опис"></textarea><button class="btn-primary" onclick="admSend('edit_prod')">Оновити</button><button class="btn-primary" style="background:var(--danger); margin-top:8px;" onclick="admSend('del_prod')">Видалити</button>`;
             else if(type === 'sync_inv') {
                 html = `<h4 style="margin-bottom:12px;">📦 Дані лота (Пряме редагування)</h4>
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
@@ -1157,7 +1122,11 @@
 
         function closeAdmForm() { document.getElementById('adm-form-cont').style.display = 'none'; document.getElementById('adm-grid').style.display = 'grid'; }
 
-        async function admSend(action) {
+        function admSendOrderAction(action, orderId) {
+            tg.sendData(JSON.stringify({ action: action, id: orderId }));
+        }
+
+        function admSend(action) {
             let p = { action: action };
             const getVal = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
 
@@ -1199,8 +1168,7 @@
                 p.period = getVal('f-period'); 
             }
             
-            await sendBotCommand(p);
-            tg.showAlert("✅ Дію виконано та збережено!");
+            tg.sendData(JSON.stringify(p));
         }
     </script>
 </body>

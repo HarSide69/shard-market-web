@@ -548,6 +548,12 @@
                 <img id="receipt-preview" class="upload-preview" src="">
             </div>
 
+            <!-- КОМЕНТАР ПОКУПЦЯ -->
+            <div class="card-box" style="padding: 12px;">
+                <label style="font-size: 12px; color: var(--text-muted); font-weight: 700; display: block; margin-bottom: 6px;">Коментар до замовлення (за бажанням):</label>
+                <textarea id="order-comment" class="adm-input" style="height: 60px; margin-bottom: 0;" placeholder="Ваші побажання, нікнейм або деталі оплати..."></textarea>
+            </div>
+
             <button id="btn-submit-order" class="btn-primary" onclick="submitOrderWithReceipt()">✅ Підтвердити та надіслати замовлення</button>
         </div>
     </div>
@@ -765,6 +771,7 @@
 
         function openHistory(id) {
             let h = allHistory.find(x => x.id === id);
+            if (!h) return;
             activeReviewOrderId = h.id;
             document.getElementById('hm-id').innerText = h.id;
             let color = h.s === 'Закрито' ? 'var(--success)' : (h.s === 'Відмова' ? 'var(--danger)' : 'var(--warning)');
@@ -821,7 +828,6 @@
                 comment: comment || null
             }));
             closeAllModals();
-            tg.showAlert("Дякуємо за ваш відгук!");
         }
 
         function closeAllModals() { 
@@ -860,13 +866,13 @@
                     const prev = document.getElementById('receipt-preview');
                     prev.src = e.target.result;
                     prev.style.display = 'block';
-                    document.getElementById('upload-label').innerText = '✅ Чек додано: ' + selectedReceiptFile.name;
+                    document.getElementById('upload-label').innerText = '✅ Чек обрано: ' + selectedReceiptFile.name;
                 };
                 reader.readAsDataURL(selectedReceiptFile);
             }
         }
 
-        /* СТИСНЕННЯ ЗОБРАЖЕННЯ */
+        /* КЛІЄНТСЬКЕ СТИСНЕННЯ ЗОБРАЖЕННЯ */
         async function compressImage(file, maxWidth = 1000, quality = 0.7) {
             return new Promise((resolve) => {
                 const reader = new FileReader();
@@ -900,11 +906,11 @@
             });
         }
 
-        /* НАДІЙНЕ ЗАВАНТАЖЕННЯ ЧЕКА НА СЕРВЕР */
+        /* НАДІЙНЕ ЗАВАНТАЖЕННЯ ЧЕКА */
         async function uploadReceiptFile(file) {
             const compressed = await compressImage(file);
             
-            // 1. Спроба через litterbox (Catbox)
+            // 1. Спроба через Catbox litterbox
             try {
                 const fd = new FormData();
                 fd.append('reqtype', 'fileupload');
@@ -912,9 +918,7 @@
                 fd.append('fileToUpload', compressed);
                 const res = await fetch('https://litterbox.catbox.moe/resources/internals/api.php', { method: 'POST', body: fd });
                 const textUrl = await res.text();
-                if (textUrl && textUrl.startsWith('http')) {
-                    return textUrl.trim();
-                }
+                if (textUrl && textUrl.startsWith('http')) return textUrl.trim();
             } catch (e) {}
 
             // 2. Спроба через tmpfiles.org
@@ -923,9 +927,7 @@
                 fd2.append('file', compressed);
                 const res2 = await fetch('https://tmpfiles.org/api/v1/upload', { method: 'POST', body: fd2 });
                 const j2 = await res2.json();
-                if (j2 && j2.data && j2.data.url) {
-                    return j2.data.url.replace('tmpfiles.org/', 'tmpfiles.org/dl/');
-                }
+                if (j2 && j2.data && j2.data.url) return j2.data.url.replace('tmpfiles.org/', 'tmpfiles.org/dl/');
             } catch (e) {}
 
             // 3. Спроба через file.io
@@ -940,7 +942,7 @@
             throw new Error("Помилка завантаження фото.");
         }
 
-        /* ОФОРМЛЕННЯ ЗАМОВЛЕННЯ З ЧЕКОМ */
+        /* ОФОРМЛЕННЯ ЗАМОВЛЕННЯ З ЧЕКОМ ТА КОМЕНТАРЕМ */
         async function submitOrderWithReceipt() {
             if (cart.length === 0) return tg.showAlert("Кошик порожній!");
             if (!selectedReceiptFile) {
@@ -949,17 +951,19 @@
 
             const btn = document.getElementById('btn-submit-order');
             btn.disabled = true;
-            btn.innerText = "⏳ Завантаження чека та створення замовлення...";
+            btn.innerText = "⏳ Завантаження чека та оформлення...";
 
             try {
                 const receiptUrl = await uploadReceiptFile(selectedReceiptFile);
                 const total = cart.reduce((s, i) => s + i.pr, 0);
+                const comment = document.getElementById('order-comment').value.trim();
 
                 const payload = {
                     action: 'checkout',
                     items: cart.map(i => ({ id: i.id, n: i.n, pr: i.pr })),
                     total: total,
-                    receipt_url: receiptUrl
+                    receipt_url: receiptUrl,
+                    note: comment || "Без коментаря"
                 };
 
                 // Очищуємо кошик після успішного оформлення
@@ -971,7 +975,7 @@
             } catch (err) {
                 btn.disabled = false;
                 btn.innerText = "✅ Підтвердити та надіслати замовлення";
-                tg.showAlert("Помилка завантаження чека. Перевірте інтернет-з'єднання та спробуйте ще раз.");
+                tg.showAlert("Помилка завантаження чека. Перевірте з'єднання та спробуйте ще раз.");
             }
         }
 
@@ -1013,7 +1017,7 @@
             tg.sendData(JSON.stringify({ action: 'withdraw', amount: bal }));
         }
 
-        /* АДМІНКА: ПЕРЕГЛЯД ТА ПІДТВЕРДЖЕННЯ ЗАМОВЛЕНЬ ІЗ ЧЕКАМИ */
+        /* АДМІНКА: ПЕРЕГЛЯД ТА ВИДАЧА ЗАМОВЛЕНЬ НА САЙТІ */
         function loadProductInventory(pid) {
             const items = adminInvData[pid] || [];
             const countLabel = document.getElementById('inv-count-badge');
@@ -1048,15 +1052,21 @@
                                 <span style="color:var(--primary);">${o.t} грн</span>
                             </div>
                             <div style="font-size:12px; color:var(--text-muted); margin-bottom:4px;">👤 <b>@${o.u}</b> (ID: ${o.uid}) • 📅 ${o.d}</div>
-                            <div style="font-size:13px; font-weight:600; margin-bottom:8px;">🛒 Товари: ${o.it}</div>
+                            <div style="font-size:13px; font-weight:600; margin-bottom:6px;">🛒 Товари: ${o.it}</div>
                             
+                            ${o.n && o.n !== 'Без коментаря' ? `
+                                <div style="font-size:12px; background:rgba(59,130,246,0.08); padding:6px 10px; border-radius:8px; margin-bottom:8px; border:1px solid var(--border);">
+                                    <b>📝 Коментар покупця:</b> ${o.n}
+                                </div>
+                            ` : ''}
+
                             ${o.rec ? `
                                 <div style="margin-bottom:10px;">
                                     <strong style="font-size:12px; color:var(--text-muted); display:block; margin-bottom:4px;">Чек про оплату:</strong>
                                     <a href="${o.rec}" target="_blank">
                                         <img src="${o.rec}" style="width:100%; max-height:220px; object-fit:cover; border-radius:12px; border:1px solid var(--border);" alt="Чек оплати">
                                     </a>
-                                    <div style="font-size:11px; color:var(--primary); margin-top:2px; font-weight:600;">🔍 Натисніть на фото, щоб відкрити оригінал</div>
+                                    <div style="font-size:11px; color:var(--primary); margin-top:2px; font-weight:600;">🔍 Натисніть на фото для перегляду оригіналу</div>
                                 </div>
                             ` : `<div style="font-size:12px; color:var(--danger); margin-bottom:8px;">⚠️ Фото чека відсутнє</div>`}
                             

@@ -558,7 +558,7 @@
         </div>
     </div>
 
-    <!-- ІСТОРІЯ (СТАРИЙ КРАСИВИЙ ФОРМАТ) -->
+    <!-- ІСТОРІЯ -->
     <div id="history" class="tab-content">
         <h3 style="font-size: 20px; font-weight: 800; margin-bottom: 14px;">📋 Мої замовлення</h3>
         <div id="history-list"><div class="empty-text">Завантаження історії...</div></div>
@@ -674,9 +674,6 @@
         }
 
         window.onload = function() {
-            // Очищуємо застарілі локальні черги, щоб відображався тільки чистий серверний формат
-            localStorage.removeItem('shard_history_local');
-
             const savedTheme = localStorage.getItem('shard_theme');
             const isDark = savedTheme ? (savedTheme === 'dark') : (tg.colorScheme === 'dark');
             document.getElementById('theme-toggle').checked = isDark;
@@ -875,7 +872,7 @@
             }
         }
 
-        /* СТИСНЕННЯ ЗОБРАЖЕННЯ */
+        /* КЛІЄНТСЬКЕ СТИСНЕННЯ ЗОБРАЖЕННЯ */
         async function compressImage(file, maxWidth = 1000, quality = 0.7) {
             return new Promise((resolve) => {
                 const reader = new FileReader();
@@ -909,11 +906,11 @@
             });
         }
 
-        /* ЗАВАНТАЖЕННЯ ЧЕКА НА СЕРВЕР */
+        /* НАДІЙНЕ ЗАВАНТАЖЕННЯ ЧЕКА */
         async function uploadReceiptFile(file) {
             const compressed = await compressImage(file);
             
-            // 1. Litterbox (Catbox)
+            // 1. Catbox litterbox
             try {
                 const fd = new FormData();
                 fd.append('reqtype', 'fileupload');
@@ -1128,22 +1125,45 @@
 
         function admSend(action) {
             let p = { action: action };
-            if(action=='add_cat'||action=='edit_cat'){ p.n=document.getElementById('f-name').value; p.ph=document.getElementById('f-ph').value; if(action=='edit_cat') p.id=document.getElementById('f-id').value; }
-            else if(action=='add_prod'||action=='edit_prod'){ p.cid=document.getElementById('f-cid')?.value; p.n=document.getElementById('f-name').value; p.pr=document.getElementById('f-pr').value; p.ph=document.getElementById('f-ph').value; p.d=document.getElementById('f-desc').value; if(action=='edit_prod') p.id=document.getElementById('f-id').value; }
-            else if(action=='del_cat'||action=='del_prod'){ p.id=document.getElementById('f-id').value; }
-            else if(action=='sync_inv'){
-                p.id = document.getElementById('f-id').value;
-                const mode = document.getElementById('f-mode').value;
-                const rawData = document.getElementById('f-data').value;
+            const getVal = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+
+            if(action === 'add_cat' || action === 'edit_cat'){ 
+                p.n = getVal('f-name'); 
+                p.ph = getVal('f-ph'); 
+                if(action === 'edit_cat') p.id = getVal('f-id'); 
+            }
+            else if(action === 'add_prod' || action === 'edit_prod'){ 
+                p.cid = getVal('f-cid'); 
+                p.n = getVal('f-name'); 
+                p.pr = getVal('f-pr'); 
+                p.ph = getVal('f-ph'); 
+                p.d = getVal('f-desc'); 
+                if(action === 'edit_prod') p.id = getVal('f-id'); 
+            }
+            else if(action === 'del_cat' || action === 'del_prod'){ 
+                p.id = getVal('f-id'); 
+            }
+            else if(action === 'sync_inv'){
+                p.id = getVal('f-id');
+                const mode = getVal('f-mode');
+                const rawData = getVal('f-data');
                 if (mode === 'multi') {
                     p.keys = rawData.split(/\n\s*\n/).map(k => k.trim()).filter(k => k !== '');
                 } else {
                     p.keys = rawData.split('\n').map(k => k.trim()).filter(k => k !== '');
                 }
             }
-            else if(action=='reqs'||action=='broadcast'||action=='ban'||action=='search_order'){ p.d=document.getElementById('f-data').value; }
-            else if(action=='discount'){ p.type=document.getElementById('f-dtype').value; p.xtra=document.getElementById('d-xtra').value; p.perc=document.getElementById('f-pr').value; }
-            else if(action=='req_stats'){ p.period=document.getElementById('f-period').value; }
+            else if(action === 'reqs' || action === 'broadcast' || action === 'ban' || action === 'search_order'){ 
+                p.d = getVal('f-data'); 
+            }
+            else if(action === 'discount'){ 
+                p.type = getVal('f-dtype'); 
+                p.xtra = getVal('d-xtra'); 
+                p.perc = getVal('f-pr'); 
+            }
+            else if(action === 'req_stats'){ 
+                p.period = getVal('f-period'); 
+            }
             
             tg.sendData(JSON.stringify(p));
         }

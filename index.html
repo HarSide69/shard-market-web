@@ -461,7 +461,7 @@
                 <span style="color: var(--primary);"><span id="cart-total">0</span> грн</span>
             </div>
 
-            <!-- БЛОК РЕКВІЗИТІВ ДЛЯ ОПЛАТИ НА САЙТІ -->
+            <!-- БЛОК РЕКВІЗИТІВ -->
             <div class="requisites-box">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                     <strong style="font-size: 13px; color: var(--text-main);">💳 Реквізити для оплати:</strong>
@@ -531,7 +531,7 @@
             <button class="adm-btn" onclick="openAdmForm('edit_cat')">✏️ Ред. розділ</button>
             <button class="adm-btn" onclick="openAdmForm('add_prod')">📦 Додати лот</button>
             <button class="adm-btn" onclick="openAdmForm('edit_prod')">✏️ Ред. лот</button>
-            <button class="adm-btn" onclick="openAdmForm('add_inv')" style="grid-column: span 2; background: var(--primary); color: #fff;">💾 Завантажити дані (Ключі/Товари)</button>
+            <button class="adm-btn" onclick="openAdmForm('sync_inv')" style="grid-column: span 2; background: var(--primary); color: #fff;">📦 Дані лотів (Редагування/Наявність)</button>
             <button class="adm-btn" onclick="openAdmForm('reqs')">💳 Реквізити</button>
             <button class="adm-btn" onclick="openAdmForm('discounts')">🏷 Знижки</button>
             <button class="adm-btn" onclick="openAdmForm('broadcast')">📢 Розсилка</button>
@@ -555,6 +555,7 @@
         const tg = window.Telegram.WebApp;
         tg.expand();
         let cart = [], allProducts = [], allCategories = [], allHistory = [];
+        let adminInvData = {};
         let currentRequisites = "Реквізити уточнюються";
         let botUsername = "test_shard_bot"; 
 
@@ -580,6 +581,7 @@
                     allProducts = data.p || [];
                     allCategories = data.c || [];
                     allHistory = data.h || [];
+                    adminInvData = data.ainv || {};
                     currentRequisites = data.r || "Реквізити не вказані";
                     document.getElementById('display-requisites').innerText = currentRequisites;
                     
@@ -733,7 +735,23 @@
             tg.sendData(JSON.stringify({ action: 'withdraw', amount: bal }));
         }
 
-        /* АДМІНКА */
+        /* АДМІНКА: ЗРУЧНЕ ПРЯМЕ РЕДАГУВАННЯ ДАНИХ */
+        function loadProductInventory(pid) {
+            const items = adminInvData[pid] || [];
+            const countLabel = document.getElementById('inv-count-badge');
+            if (countLabel) countLabel.innerText = items.length;
+            
+            const modeSelect = document.getElementById('f-mode');
+            const textarea = document.getElementById('f-data');
+            if (!textarea) return;
+
+            // Автовизначення: якщо в товарах є переноси рядків, вмикаємо блоковий режим
+            const hasMulti = items.some(item => item.includes('\n'));
+            if (modeSelect) modeSelect.value = hasMulti ? 'multi' : 'single';
+            
+            textarea.value = hasMulti ? items.join('\n\n') : items.join('\n');
+        }
+
         function openAdmForm(type) {
             document.getElementById('adm-grid').style.display = 'none';
             const cont = document.getElementById('adm-form-cont'); cont.style.display = 'block';
@@ -745,18 +763,25 @@
             else if(type === 'edit_cat') html = `<h4 style="margin-bottom:12px;">✏️ Редагувати розділ</h4><select id="f-id" class="adm-input">${catOpts}</select><input id="f-name" class="adm-input" placeholder="Нова назва"><input id="f-ph" class="adm-input" placeholder="Нове URL фото"><button class="btn-primary" onclick="admSend('edit_cat')">Оновити</button><button class="btn-primary" style="background:var(--danger); margin-top:8px;" onclick="admSend('del_cat')">Видалити</button>`;
             else if(type === 'add_prod') html = `<h4 style="margin-bottom:12px;">📦 Додати лот</h4><select id="f-cid" class="adm-input">${catOpts}</select><input id="f-name" class="adm-input" placeholder="Назва лота"><input id="f-pr" type="number" class="adm-input" placeholder="Ціна"><input id="f-ph" class="adm-input" placeholder="URL фото"><textarea id="f-desc" class="adm-input" style="height:100px;" placeholder="Опис товару"></textarea><button class="btn-primary" onclick="admSend('add_prod')">Зберегти</button>`;
             else if(type === 'edit_prod') html = `<h4 style="margin-bottom:12px;">✏️ Редагувати лот</h4><select id="f-id" class="adm-input">${prodOpts}</select><input id="f-name" class="adm-input" placeholder="Назва"><input id="f-pr" type="number" class="adm-input" placeholder="Ціна"><input id="f-ph" class="adm-input" placeholder="URL фото"><textarea id="f-desc" class="adm-input" style="height:100px;" placeholder="Опис"></textarea><button class="btn-primary" onclick="admSend('edit_prod')">Оновити</button><button class="btn-primary" style="background:var(--danger); margin-top:8px;" onclick="admSend('del_prod')">Видалити</button>`;
-            else if(type === 'add_inv') {
-                html = `<h4 style="margin-bottom:12px;">💾 Завантаження даних</h4>
-                <select id="f-id" class="adm-input">${prodOpts}</select>
-                <div style="margin-bottom:10px;">
-                    <label style="font-size:12px; color:var(--text-muted); font-weight:700; display:block; margin-bottom:4px;">Формат вводу:</label>
-                    <select id="f-mode" class="adm-input" style="margin-bottom:6px;">
-                        <option value="single">1 рядок = 1 товар (Ключі, коди)</option>
-                        <option value="multi">2+ рядки на товар (Розділювач — порожній рядок)</option>
-                    </select>
+            else if(type === 'sync_inv') {
+                const firstPid = allProducts.length > 0 ? allProducts[0].id : '';
+                html = `<h4 style="margin-bottom:12px;">📦 Дані лота (Пряме редагування)</h4>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                    <label style="font-size:12px; color:var(--text-muted); font-weight:700;">Оберіть лот:</label>
+                    <span style="font-size:12px; font-weight:700; color:var(--primary);">У наявності: <b id="inv-count-badge">0</b> шт</span>
                 </div>
-                <textarea id="f-data" class="adm-input" style="height:150px;" placeholder="Введіть дані відповідно до обраного формату..."></textarea>
-                <button class="btn-primary" onclick="admSend('add_inv')">Завантажити в базу</button>`;
+                <select id="f-id" class="adm-input" onchange="loadProductInventory(this.value)">${prodOpts}</select>
+                
+                <label style="font-size:12px; color:var(--text-muted); font-weight:700; display:block; margin-bottom:4px;">Формат списку:</label>
+                <select id="f-mode" class="adm-input">
+                    <option value="single">1 рядок = 1 позиція (Ключі)</option>
+                    <option value="multi">Блоки (Розділювач — порожній рядок)</option>
+                </select>
+
+                <label style="font-size:12px; color:var(--text-muted); font-weight:700; display:block; margin-bottom:4px;">Список товарів у наявності:</label>
+                <textarea id="f-data" class="adm-input" style="height:180px; font-family:monospace; font-size:13px;" placeholder="Вписуйте або видаляйте прямо тут..."></textarea>
+                
+                <button class="btn-primary" onclick="admSend('sync_inv')">💾 Зберегти всі дані</button>`;
             }
             else if(type === 'reqs') html = `<h4 style="margin-bottom:12px;">💳 Реквізити для оплати</h4><textarea id="f-data" class="adm-input" style="height:100px;" placeholder="Реквізити картки/банку"></textarea><button class="btn-primary" onclick="admSend('reqs')">Зберегти</button>`;
             else if(type === 'broadcast') html = `<h4 style="margin-bottom:12px;">📢 Розсилка користувачам</h4><textarea id="f-data" class="adm-input" style="height:120px;" placeholder="Текст повідомлення"></textarea><button class="btn-primary" onclick="admSend('broadcast')">Надіслати всім</button>`;
@@ -766,6 +791,10 @@
             else if(type === 'stats') html = `<h4 style="margin-bottom:12px;">📊 Звіт статистики</h4><select id="f-period" class="adm-input"><option value="all">За весь час</option><option value="24">За 24 години</option><option value="48">За 48 годин</option><option value="720">За 30 днів</option></select><button class="btn-primary" onclick="admSend('req_stats')">Отримати звіт</button>`;
             
             cont.innerHTML = html + `<button class="btn-add" style="margin-top:10px;" onclick="closeAdmForm()">Скасувати</button>`;
+            
+            if (type === 'sync_inv' && allProducts.length > 0) {
+                loadProductInventory(allProducts[0].id);
+            }
         }
 
         function closeAdmForm() { document.getElementById('adm-form-cont').style.display = 'none'; document.getElementById('adm-grid').style.display = 'grid'; }
@@ -775,7 +804,7 @@
             if(action=='add_cat'||action=='edit_cat'){ p.n=document.getElementById('f-name').value; p.ph=document.getElementById('f-ph').value; if(action=='edit_cat') p.id=document.getElementById('f-id').value; }
             else if(action=='add_prod'||action=='edit_prod'){ p.cid=document.getElementById('f-cid')?.value; p.n=document.getElementById('f-name').value; p.pr=document.getElementById('f-pr').value; p.ph=document.getElementById('f-ph').value; p.d=document.getElementById('f-desc').value; if(action=='edit_prod') p.id=document.getElementById('f-id').value; }
             else if(action=='del_cat'||action=='del_prod'){ p.id=document.getElementById('f-id').value; }
-            else if(action=='add_inv'){
+            else if(action=='sync_inv'){
                 p.id = document.getElementById('f-id').value;
                 const mode = document.getElementById('f-mode').value;
                 const rawData = document.getElementById('f-data').value;

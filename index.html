@@ -535,15 +535,15 @@
                 </div>
                 <div id="display-requisites" class="reqs-text">Завантаження реквізитів...</div>
                 <div style="font-size: 12px; color: var(--text-muted); line-height: 1.4;">
-                    Сплатіть суму <b id="cart-total-hint" style="color: var(--text-main);">0 грн</b> за реквізитами та прикріпіть фото чека нижче:
+                    Сплатіть суму <b id="cart-total-hint" style="color: var(--text-main);">0 грн</b> за реквізитами та додайте фото чека нижче:
                 </div>
             </div>
 
             <!-- ЗАВАНТАЖЕННЯ ФОТО ЧЕКА -->
             <div class="upload-zone" onclick="document.getElementById('receipt-file').click()">
                 <div style="font-size: 28px; margin-bottom: 4px;">📸</div>
-                <div id="upload-label" style="font-size: 14px; font-weight: 700; color: var(--primary);">Натисніть, щоб додати фото чека</div>
-                <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Оберіть скріншот або фото квитанції</div>
+                <div id="upload-label" style="font-size: 14px; font-weight: 700; color: var(--primary);">Натисніть, щоб обрати фото чека</div>
+                <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Оберіть файл або скріншот квитанції</div>
                 <input type="file" id="receipt-file" accept="image/*" style="display: none;" onchange="handleReceiptSelect(this)">
                 <img id="receipt-preview" class="upload-preview" src="">
             </div>
@@ -860,14 +860,14 @@
                     const prev = document.getElementById('receipt-preview');
                     prev.src = e.target.result;
                     prev.style.display = 'block';
-                    document.getElementById('upload-label').innerText = '✅ Чек додано (натисніть, щоб змінити)';
+                    document.getElementById('upload-label').innerText = '✅ Чек обрано: ' + selectedReceiptFile.name;
                 };
                 reader.readAsDataURL(selectedReceiptFile);
             }
         }
 
-        /* КЛІЄНТСЬКЕ СТИСНЕННЯ ЗОБРАЖЕННЯ */
-        async function compressImage(file, maxWidth = 1200, quality = 0.75) {
+        /* КЛІЄНТСЬКЕ СТИСНЕННЯ ЗОБРАЖЕННЯ ДЛЯ МИТТЄВОГО ЗАВАНТАЖЕННЯ */
+        async function compressImage(file, maxWidth = 1000, quality = 0.7) {
             return new Promise((resolve) => {
                 const reader = new FileReader();
                 reader.readAsDataURL(file);
@@ -904,31 +904,31 @@
         async function uploadReceiptFile(file) {
             const compressed = await compressImage(file);
             
-            // 1. Спроба: tmpfiles.org
+            // 1. Спроба через litterbox (Catbox)
             try {
                 const fd = new FormData();
-                fd.append('file', compressed);
-                const res = await fetch('https://tmpfiles.org/api/v1/upload', { method: 'POST', body: fd });
-                const j = await res.json();
-                if (j && j.data && j.data.url) {
-                    return j.data.url.replace('tmpfiles.org/', 'tmpfiles.org/dl/');
-                }
-            } catch (e) {}
-
-            // 2. Спроба: litterbox.catbox.moe
-            try {
-                const fd2 = new FormData();
-                fd2.append('reqtype', 'fileupload');
-                fd2.append('time', '72h');
-                fd2.append('fileToUpload', compressed);
-                const res2 = await fetch('https://litterbox.catbox.moe/resources/internals/api.php', { method: 'POST', body: fd2 });
-                const textUrl = await res2.text();
+                fd.append('reqtype', 'fileupload');
+                fd.append('time', '72h');
+                fd.append('fileToUpload', compressed);
+                const res = await fetch('https://litterbox.catbox.moe/resources/internals/api.php', { method: 'POST', body: fd });
+                const textUrl = await res.text();
                 if (textUrl && textUrl.startsWith('http')) {
                     return textUrl.trim();
                 }
             } catch (e) {}
 
-            // 3. Спроба: file.io
+            // 2. Спроба через tmpfiles.org
+            try {
+                const fd2 = new FormData();
+                fd2.append('file', compressed);
+                const res2 = await fetch('https://tmpfiles.org/api/v1/upload', { method: 'POST', body: fd2 });
+                const j2 = await res2.json();
+                if (j2 && j2.data && j2.data.url) {
+                    return j2.data.url.replace('tmpfiles.org/', 'tmpfiles.org/dl/');
+                }
+            } catch (e) {}
+
+            // 3. Спроба через file.io
             try {
                 const fd3 = new FormData();
                 fd3.append('file', compressed);
@@ -937,7 +937,7 @@
                 if (j3 && j3.link) return j3.link;
             } catch (e) {}
 
-            throw new Error("Не вдалося завантажити фото чека.");
+            throw new Error("Помилка відправки фото.");
         }
 
         /* ОФОРМЛЕННЯ ЗАМОВЛЕННЯ З ЧЕКОМ */
@@ -962,7 +962,7 @@
                     receipt_url: receiptUrl
                 };
 
-                // Очищуємо кошик після успішної відправки
+                // Очищуємо кошик після успішного оформлення
                 cart = [];
                 saveCart();
                 updateCartUI();
@@ -971,7 +971,7 @@
             } catch (err) {
                 btn.disabled = false;
                 btn.innerText = "✅ Підтвердити та надіслати замовлення";
-                tg.showAlert("Помилка при завантаженні чека. Спробуйте ще раз або перевірте інтернет-з'єднання.");
+                tg.showAlert("Помилка завантаження чека. Перевірте з'єднання та спробуйте ще раз.");
             }
         }
 

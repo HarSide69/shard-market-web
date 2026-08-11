@@ -328,7 +328,7 @@
             padding: 20px 12px;
             text-align: center;
             background: rgba(59, 130, 246, 0.04);
-            margin-bottom: 16px;
+            margin-bottom: 14px;
             cursor: pointer;
             transition: 0.2s all;
         }
@@ -542,16 +542,16 @@
             <!-- ЗАВАНТАЖЕННЯ ФОТО ЧЕКА -->
             <div class="upload-zone" onclick="document.getElementById('receipt-file').click()">
                 <div style="font-size: 28px; margin-bottom: 4px;">📸</div>
-                <div id="upload-label" style="font-size: 14px; font-weight: 700; color: var(--primary);">Натисніть, щоб обрати фото чека</div>
+                <div id="upload-label" style="font-size: 14px; font-weight: 700; color: var(--primary);">Натисніть, щоб додати фото чека</div>
                 <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Оберіть файл або скріншот квитанції</div>
                 <input type="file" id="receipt-file" accept="image/*" style="display: none;" onchange="handleReceiptSelect(this)">
                 <img id="receipt-preview" class="upload-preview" src="">
             </div>
 
-            <!-- КОМЕНТАР ПОКУПЦЯ -->
-            <div class="card-box" style="padding: 12px;">
-                <label style="font-size: 12px; color: var(--text-muted); font-weight: 700; display: block; margin-bottom: 6px;">Коментар до замовлення (за бажанням):</label>
-                <textarea id="order-comment" class="adm-input" style="height: 60px; margin-bottom: 0;" placeholder="Ваші побажання, нікнейм або деталі оплати..."></textarea>
+            <!-- КОМЕНТАР ПОКУПЦЯ (ЗА БАЖАННЯМ) -->
+            <div class="card-box" style="padding: 14px; margin-bottom: 16px;">
+                <label style="font-size: 13px; color: var(--text-muted); font-weight: 700; display: block; margin-bottom: 6px;">📝 Коментар до замовлення (за бажанням):</label>
+                <textarea id="order-comment" class="adm-input" style="height: 65px; margin-bottom: 0; font-size: 13px;" placeholder="Вкажіть деталі оплати, побажання або залиште поле порожнім..."></textarea>
             </div>
 
             <button id="btn-submit-order" class="btn-primary" onclick="submitOrderWithReceipt()">✅ Підтвердити та надіслати замовлення</button>
@@ -673,6 +673,28 @@
             updateCartUI();
         }
 
+        function saveLocalOrders() {
+            localStorage.setItem('shard_history_local', JSON.stringify(allHistory));
+        }
+
+        function loadLocalOrders(serverHistory) {
+            try {
+                const localRaw = localStorage.getItem('shard_history_local');
+                const localOrders = localRaw ? JSON.parse(localRaw) : [];
+                
+                // Об'єднуємо серверні замовлення з локально збереженими новими замовленнями
+                const merged = [...serverHistory];
+                localOrders.forEach(lo => {
+                    if (!merged.some(so => so.id === lo.id)) {
+                        merged.unshift(lo);
+                    }
+                });
+                return merged;
+            } catch (e) {
+                return serverHistory;
+            }
+        }
+
         window.onload = function() {
             const savedTheme = localStorage.getItem('shard_theme');
             const isDark = savedTheme ? (savedTheme === 'dark') : (tg.colorScheme === 'dark');
@@ -688,12 +710,15 @@
                     botUsername = data.bot || botUsername;
                     allProducts = data.p || [];
                     allCategories = data.c || [];
-                    allHistory = data.h || [];
                     adminInvData = data.ainv || {};
                     adminPendingOrders = data.pend || [];
                     currentRequisites = data.r || "Реквізити не вказані";
                     document.getElementById('display-requisites').innerText = currentRequisites;
                     
+                    // Завантаження та об'єднання історії замовлень
+                    allHistory = loadLocalOrders(data.h || []);
+                    saveLocalOrders();
+
                     if (data.adm === 1) {
                         document.getElementById('admin-panel-btn').style.display = 'flex';
                         document.getElementById('ast-u').innerText = data.ast.u;
@@ -724,7 +749,7 @@
             if (allHistory.length > 0) {
                 hList.innerHTML = allHistory.map(h => {
                     let color = h.s === 'Закрито' ? 'var(--success)' : (h.s === 'Відмова' ? 'var(--danger)' : 'var(--warning)');
-                    return `<div class="card-box" onclick="openHistory(${h.id})" style="cursor:pointer; display:flex; justify-content:space-between; align-items:center;">
+                    return `<div class="card-box" onclick="openHistory('${h.id}')" style="cursor:pointer; display:flex; justify-content:space-between; align-items:center;">
                         <div>
                             <div style="font-weight:800; font-size:14px;">Замовлення #${h.id}</div>
                             <div style="font-size:12px; color:${color}; font-weight:700; margin-top:2px;">${h.s}</div>
@@ -770,7 +795,7 @@
         }
 
         function openHistory(id) {
-            let h = allHistory.find(x => x.id === id);
+            let h = allHistory.find(x => String(x.id) === String(id));
             if (!h) return;
             activeReviewOrderId = h.id;
             document.getElementById('hm-id').innerText = h.id;
@@ -866,7 +891,7 @@
                     const prev = document.getElementById('receipt-preview');
                     prev.src = e.target.result;
                     prev.style.display = 'block';
-                    document.getElementById('upload-label').innerText = '✅ Чек обрано: ' + selectedReceiptFile.name;
+                    document.getElementById('upload-label').innerText = '✅ Чек додано: ' + selectedReceiptFile.name;
                 };
                 reader.readAsDataURL(selectedReceiptFile);
             }
@@ -910,7 +935,7 @@
         async function uploadReceiptFile(file) {
             const compressed = await compressImage(file);
             
-            // 1. Спроба через Catbox litterbox
+            // 1. Спроба Catbox
             try {
                 const fd = new FormData();
                 fd.append('reqtype', 'fileupload');
@@ -921,7 +946,7 @@
                 if (textUrl && textUrl.startsWith('http')) return textUrl.trim();
             } catch (e) {}
 
-            // 2. Спроба через tmpfiles.org
+            // 2. Спроба tmpfiles
             try {
                 const fd2 = new FormData();
                 fd2.append('file', compressed);
@@ -930,7 +955,7 @@
                 if (j2 && j2.data && j2.data.url) return j2.data.url.replace('tmpfiles.org/', 'tmpfiles.org/dl/');
             } catch (e) {}
 
-            // 3. Спроба через file.io
+            // 3. Спроба file.io
             try {
                 const fd3 = new FormData();
                 fd3.append('file', compressed);
@@ -951,7 +976,7 @@
 
             const btn = document.getElementById('btn-submit-order');
             btn.disabled = true;
-            btn.innerText = "⏳ Завантаження чека та оформлення...";
+            btn.innerText = "⏳ Завантаження чека та створення замовлення...";
 
             try {
                 const receiptUrl = await uploadReceiptFile(selectedReceiptFile);
@@ -966,7 +991,19 @@
                     note: comment || "Без коментаря"
                 };
 
-                // Очищуємо кошик після успішного оформлення
+                // Зберігаємо замовлення в локальну історію
+                const localId = 'новий (' + new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) + ')';
+                allHistory.unshift({
+                    id: localId,
+                    it: payload.items.map(x => x.n).join(', '),
+                    t: total,
+                    s: 'Очікування',
+                    dat: '',
+                    d: 'Сьогодні'
+                });
+                saveLocalOrders();
+
+                // Очищуємо кошик
                 cart = [];
                 saveCart();
                 updateCartUI();
@@ -1017,7 +1054,7 @@
             tg.sendData(JSON.stringify({ action: 'withdraw', amount: bal }));
         }
 
-        /* АДМІНКА: ПЕРЕГЛЯД ТА ВИДАЧА ЗАМОВЛЕНЬ НА САЙТІ */
+        /* АДМІНКА: ПЕРЕГЛЯД ТА ПІДТВЕРДЖЕННЯ ЗАМОВЛЕНЬ НА САЙТІ */
         function loadProductInventory(pid) {
             const items = adminInvData[pid] || [];
             const countLabel = document.getElementById('inv-count-badge');
@@ -1052,7 +1089,7 @@
                                 <span style="color:var(--primary);">${o.t} грн</span>
                             </div>
                             <div style="font-size:12px; color:var(--text-muted); margin-bottom:4px;">👤 <b>@${o.u}</b> (ID: ${o.uid}) • 📅 ${o.d}</div>
-                            <div style="font-size:13px; font-weight:600; margin-bottom:6px;">🛒 Товари: ${o.it}</div>
+                            <div style="font-size:13px; font-weight:600; margin-bottom:8px;">🛒 Товари: ${o.it}</div>
                             
                             ${o.n && o.n !== 'Без коментаря' ? `
                                 <div style="font-size:12px; background:rgba(59,130,246,0.08); padding:6px 10px; border-radius:8px; margin-bottom:8px; border:1px solid var(--border);">
